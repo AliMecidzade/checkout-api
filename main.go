@@ -1,7 +1,16 @@
 package main
 
-import "fmt"
+import (
+	"checkout-api/handlers"
+	"checkout-api/store"
+	"log"
+	"net/http"
+)
 
 func main() {
-	fmt.Println("TODO: start HTTP server on :8080")
+	itemStore := store.NewStore()
+	handler := handlers.NewHandler(itemStore)
+	http.HandleFunc("/items", handler.GetItems)
+	
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
