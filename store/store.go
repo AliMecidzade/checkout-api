@@ -52,7 +52,7 @@ func (store *Store) GetItems() []*models.Item {
 	return items
 }
 func (store *Store) GetItem(id int) *models.Item {
-	return nil
+	return store.Items[id]
 }
 func (store *Store) CreateOrder(userID int,
 	items []models.LineItem,
