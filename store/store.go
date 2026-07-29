@@ -51,12 +51,41 @@ func (store *Store) GetItems() []*models.Item {
 	}
 	return items
 }
+
 func (store *Store) GetItem(id int) *models.Item {
-	return nil
+	item, exists := store.Items[id]
+	if !exists {
+		return nil
+	}
+	return item
 }
+
+func (store *Store) GetOrdersByUserId(userId int) []*models.Order {
+	orders := make([]*models.Order, 0, len(store.Orders))
+
+	for _, order := range store.Orders {
+		if order.UserID == userId {
+			orders = append(orders, order)
+		}
+	}
+	return orders
+}
+
+
 func (store *Store) CreateOrder(userID int,
 	items []models.LineItem,
 	total int,
 	status string) *models.Order {
-	return nil
+
+	order := &models.Order{
+		ID:         store.NextOrderId,
+		UserID:     userID,
+		TotalPrice: total,
+		Items:      items,
+		Status:     status,
+	}
+
+	store.Orders[order.ID] = order
+	store.NextOrderId++
+	return order
 }

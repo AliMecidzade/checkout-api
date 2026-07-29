@@ -11,6 +11,7 @@ type Item struct {
 	Description string `json:"description"`
 	Price       int    `json:"price"`
 	StockSize   int    `json:"stock_size"`
+
 }
 type LineItem struct {
 	ItemID   int `json:"item_id"`
@@ -24,3 +25,5 @@ type Order struct {
 	TotalPrice int        `json:"total_price"`
 	Status     string     `json:"status"`
 }
+
+//type Cart struct
