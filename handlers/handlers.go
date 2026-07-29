@@ -18,6 +18,7 @@ type ItemStore interface {
 	CreateOrder(userID int, items []models.LineItem, total int, status string) *models.Order
 	CreateUserCart(cart *models.Cart)
 	GetUserCart(userID int) *models.Cart
+	UpdateCartItemQuantity(userID int, itemId int, quantity int) error
 }
 
 // Handler holds dependencies for HTTP handlers.
@@ -37,6 +38,11 @@ type CreateOrderRequest struct {
 		ItemID   int `json:"item_id"`
 		Quantity int `json:"quantity"`
 	} `json:"items"`
+}
+
+type UpdateCartItemRequest struct {
+	UserID   int `json:"user_id"`
+	Quantity int `json:"quantity"`
 }
 
 // PaymentResult represents a response from the payment provider.
@@ -207,6 +213,42 @@ func (h *Handler) CreateUserCartAndAddItems(w http.ResponseWriter, r *http.Reque
 
 	h.store.CreateUserCart(userCart)
 	writeJSON(w, http.StatusCreated, userCart)
+}
+
+func (h *Handler) UpdateCartItemQuantity(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPatch {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req UpdateCartItemRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Quantity <= 0 {
+		http.Error(w, "quantity must be positive", http.StatusBadRequest)
+		return
+	}
+
+	idStr := strings.TrimPrefix(r.URL.Path, "/user/cart/items/")
+	itemId, err := strconv.Atoi(idStr)
+
+	if err != nil {
+		http.Error(w, "Invalid item ID", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.UpdateCartItemQuantity(req.UserID, itemId, req.Quantity); err != nil {
+		http.Error(w, "cart error", http.StatusBadRequest)
+		return
+	}
+
+	cart := h.store.GetUserCart(req.UserID)
+	writeJSON(w, http.StatusOK, cart)
+
 }
 
 func (h *Handler) GetUserCart(w http.ResponseWriter, r *http.Request) {

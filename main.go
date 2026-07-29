@@ -23,7 +23,7 @@ func main() {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			}
 		})
-
+	http.HandleFunc("/user/cart/items/", h.UpdateCartItemQuantity)
 	http.HandleFunc("/items", h.GetItems)
 	http.HandleFunc("/items/", h.GetItemByID)
 	http.HandleFunc("/orders", h.CreateOrder)

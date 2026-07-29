@@ -2,6 +2,7 @@ package store
 
 import (
 	"checkout-api/models"
+	"fmt"
 )
 
 // Store is an in-memory store for items and orders.
@@ -65,4 +66,22 @@ func (s *Store) GetUserCart(userID int) *models.Cart {
 		return c
 	}
 	return nil
+}
+
+func (s *Store) UpdateCartItemQuantity(userID int, itemId int, quantity int) error {
+	cart, ok := s.carts[userID]
+	if !ok {
+		return fmt.Errorf("cart not found")
+	}
+
+	for i, item := range cart.Items {
+		if item.ItemID == itemId {
+			cart.Items[i].Quantity = quantity
+			return nil
+		}
+
+	}
+
+	return fmt.Errorf("item %d not found in cart", itemId)
+
 }
