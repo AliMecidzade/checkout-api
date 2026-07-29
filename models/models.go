@@ -11,7 +11,7 @@ type Item struct {
 	Description string `json:"description"`
 	Price       int    `json:"price"`
 	StockSize   int    `json:"stock_size"`
-
+	Category    string `json:"category"`
 }
 type LineItem struct {
 	ItemID   int `json:"item_id"`

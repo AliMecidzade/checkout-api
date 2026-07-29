@@ -85,6 +85,16 @@ func (handler *Handler) GetItems(writer http.ResponseWriter, request *http.Reque
 	fmt.Printf("%s\n", category)
 	fmt.Printf("%s\n", sortBy)
 
+	if category != "" {
+		items = slices.DeleteFunc(items, func(item *models.Item) bool {
+			return !strings.EqualFold(category, item.Category)
+		})
+		if len(items) == 0 {
+			http.Error(writer, "Items Not Found", http.StatusNotFound)
+			return
+		}
+	}
+
 	switch sortBy {
 
 	case "":

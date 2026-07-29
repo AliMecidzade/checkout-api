@@ -25,6 +25,7 @@ func NewStore() *Store {
 		Description: "Laptop",
 		Price:       120000,
 		StockSize:   100,
+		Category:    "Electronics",
 	}
 	store.Items[2] = &models.Item{
 		ID:          2,
@@ -32,6 +33,7 @@ func NewStore() *Store {
 		Description: "Mouse",
 		Price:       2500,
 		StockSize:   100,
+		Category:    "Peripherals",
 	}
 	store.Items[3] = &models.Item{
 		ID:          3,
@@ -39,6 +41,7 @@ func NewStore() *Store {
 		Description: "Keyboard",
 		Price:       8000,
 		StockSize:   100,
+		Category:    "Peripherals",
 	}
 
 	return store
