@@ -1,62 +1,68 @@
 package store
 
-import "checkout-api/models"
+import (
+	"checkout-api/models"
+)
 
-// Implement in-memory Store with NewStore() constructor.
-// Seed data: Laptop (120000), Mouse (2500), Keyboard (8000) — prices in cents.
-// Methods: GetItems(), GetItem(id int), CreateOrder(userID int, items []models.LineItem, total int, status string)
-
+// Store is an in-memory store for items and orders.
 type Store struct {
-	Items       map[int]*models.Item
-	Orders      map[int]*models.Order
-	NextOrderId int
+	items       map[int]*models.Item
+	orders      map[int]*models.Order
+	nextOrderID int
+	carts       map[int]*models.Cart
 }
 
+// NewStore creates a Store pre-loaded with seed data.
 func NewStore() *Store {
-	store := &Store{
-		Items:       make(map[int]*models.Item),
-		Orders:      make(map[int]*models.Order),
-		NextOrderId: 1,
+	s := &Store{
+		items:       make(map[int]*models.Item),
+		orders:      make(map[int]*models.Order),
+		nextOrderID: 1,
+		carts:       make(map[int]*models.Cart),
 	}
 
-	store.Items[1] = &models.Item{
-		ID:          1,
-		Name:        "Laptop",
-		Description: "Laptop",
-		Price:       120000,
-		StockSize:   100,
-	}
-	store.Items[2] = &models.Item{
-		ID:          2,
-		Name:        "Mouse",
-		Description: "Mouse",
-		Price:       2500,
-		StockSize:   100,
-	}
-	store.Items[3] = &models.Item{
-		ID:          3,
-		Name:        "Keyboard",
-		Description: "Keyboard",
-		Price:       8000,
-		StockSize:   100,
-	}
+	s.items[1] = &models.Item{ID: 1, Name: "Laptop", Description: "A fast laptop", Price: 120000, Stock: 10}
+	s.items[2] = &models.Item{ID: 2, Name: "Mouse", Description: "Wireless mouse", Price: 2500, Stock: 50}
+	s.items[3] = &models.Item{ID: 3, Name: "Keyboard", Description: "Mechanical keyboard", Price: 8000, Stock: 30}
 
-	return store
+	return s
 }
 
-func (store *Store) GetItems() []*models.Item {
-	items := make([]*models.Item, 0, len(store.Items))
-	for _, item := range store.Items {
+// GetItems returns all available items.
+func (s *Store) GetItems() []*models.Item {
+	items := make([]*models.Item, 0, len(s.items))
+	for _, item := range s.items {
 		items = append(items, item)
 	}
 	return items
 }
-func (store *Store) GetItem(id int) *models.Item {
-	return store.Items[id]
+
+// GetItem returns a single item by ID, or nil if not found.
+func (s *Store) GetItem(id int) *models.Item {
+	return s.items[id]
 }
-func (store *Store) CreateOrder(userID int,
-	items []models.LineItem,
-	total int,
-	status string) *models.Order {
+
+// CreateOrder creates a new order and returns it.
+func (s *Store) CreateOrder(userID int, items []models.LineItem, total int, status string) *models.Order {
+	order := &models.Order{
+		ID:     s.nextOrderID,
+		UserID: userID,
+		Items:  items,
+		Total:  total,
+		Status: status,
+	}
+	s.orders[order.ID] = order
+	s.nextOrderID++
+	return order
+}
+
+func (s *Store) CreateUserCart(cart *models.Cart) {
+	s.carts[cart.UserID] = cart
+}
+
+func (s *Store) GetUserCart(userID int) *models.Cart {
+	if c, ok := s.carts[userID]; ok {
+		return c
+	}
 	return nil
 }

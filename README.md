@@ -18,9 +18,27 @@ go run main.go
 
 The server starts on http://localhost:8080.
 
-## Verifying Your Work
+## API Endpoints
 
-After implementing the handlers, run the pre-written tests:
+### GET /items
+
+Returns all available items.
+
+```bash
+curl http://localhost:8080/items
+```
+
+### POST /orders
+
+Creates an order with mock payment processing.
+
+```bash
+curl -X POST http://localhost:8080/orders \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": 1, "items": [{"item_id": 1, "quantity": 2}]}'
+```
+
+## Running Tests
 
 ```bash
 go test -v ./handlers/
@@ -48,7 +66,7 @@ checkout-api/
 ├── models/models.go         # Domain models (Item, LineItem, Order)
 ├── store/store.go           # In-memory data storage
 ├── handlers/handlers.go     # HTTP route handlers
-└── handlers/handlers_test.go # Pre-written tests (run after implementing)
+└── handlers/handlers_test.go # Table-driven handler tests
 ```
 
 ## License

@@ -1,67 +1,36 @@
 package handlers
 
 import (
-	"checkout-api/models"
 	"encoding/json"
+	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"strconv"
 	"strings"
+	"time"
+
+	"checkout-api/models"
 )
 
-// Implement HTTP handlers:
-// - NewHandler(s *store.Store) — constructor
-// - GetItems: GET /items → return all items as JSON
-// - CreateOrder: POST /orders → decode request, validate items, calculate total, mock payment, create order
-
+// ItemStore defines the data operations the handler needs.
 type ItemStore interface {
 	GetItems() []*models.Item
 	GetItem(id int) *models.Item
 	CreateOrder(userID int, items []models.LineItem, total int, status string) *models.Order
+	CreateUserCart(cart *models.Cart)
+	GetUserCart(userID int) *models.Cart
 }
 
+// Handler holds dependencies for HTTP handlers.
 type Handler struct {
-	itemStore ItemStore
+	store ItemStore
 }
 
-func NewHandler(itemStore ItemStore) *Handler {
-	return &Handler{
-		itemStore: itemStore,
-	}
-}
-func (handler *Handler) GetItems(writer http.ResponseWriter, request *http.Request) {
-	if request.Method != "GET" {
-		http.Error(writer, http.StatusText(http.StatusMethodNotAllowed),
-			http.StatusMethodNotAllowed)
-		return
-	}
-	items := handler.itemStore.GetItems()
-	writeJson(writer, http.StatusOK, items)
+// NewHandler creates a Handler with the given store.
+func NewHandler(s ItemStore) *Handler {
+	return &Handler{store: s}
 }
 
-func (handler *Handler) GetItemById(writer *httptest.ResponseRecorder, request *http.Request) {
-	if request.Method != http.MethodGet {
-		http.Error(writer, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	idStr := strings.TrimPrefix(request.URL.Path, "/items/")
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
-		http.Error(writer, "Invalid item ID", http.StatusBadRequest)
-		return
-	}
-
-	item := handler.itemStore.GetItem(id)
-	if item == nil {
-		http.Error(writer, "Item not found", http.StatusNotFound)
-		return
-	}
-
-	writeJson(writer, http.StatusOK, item)
-
-}
-
+// CreateOrderRequest is the payload for POST /orders.
 type CreateOrderRequest struct {
 	UserID int `json:"user_id"`
 	Items  []struct {
@@ -70,12 +39,204 @@ type CreateOrderRequest struct {
 	} `json:"items"`
 }
 
-func (handler *Handler) CreateOrder(w *httptest.ResponseRecorder, req *http.Request) {
-
+// PaymentResult represents a response from the payment provider.
+type PaymentResult struct {
+	Success       bool   `json:"success"`
+	TransactionID string `json:"transaction_id,omitempty"`
+	Error         string `json:"error,omitempty"`
 }
 
-func writeJson(writer http.ResponseWriter, statusCode int, data any) {
-	writer.Header().Add("Content-Type", "application/json")
-	writer.WriteHeader(statusCode)
-	json.NewEncoder(writer).Encode(data)
+// mockProcessPayment simulates a payment provider call.
+func mockProcessPayment(amount int) PaymentResult {
+	if amount > 0 && amount < 1000000 {
+		return PaymentResult{
+			Success:       true,
+			TransactionID: fmt.Sprintf("txn_%d", time.Now().UnixNano()),
+		}
+	}
+	return PaymentResult{
+		Success: false,
+		Error:   "Payment declined",
+	}
+}
+
+// GetItems handles GET /items — returns all available items.
+func (h *Handler) GetItems(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	items := h.store.GetItems()
+	writeJSON(w, http.StatusOK, items)
+}
+
+// GetItemByID handles GET /items/{id} — returns a single item.
+func (h *Handler) GetItemByID(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	idStr := strings.TrimPrefix(r.URL.Path, "/items/")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid item ID", http.StatusBadRequest)
+		return
+	}
+
+	item := h.store.GetItem(id)
+	if item == nil {
+		http.Error(w, "Item not found", http.StatusNotFound)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, item)
+}
+
+// CreateOrder handles POST /orders — creates an order with mock payment.
+func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req CreateOrderRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate and calculate total
+	total := 0
+	orderItems := make([]models.LineItem, 0, len(req.Items))
+	for _, item := range req.Items {
+		storeItem := h.store.GetItem(item.ItemID)
+		if storeItem == nil {
+			http.Error(w, fmt.Sprintf("Item %d not found", item.ItemID), http.StatusBadRequest)
+			return
+		}
+		itemTotal := storeItem.Price * item.Quantity
+		total += itemTotal
+		orderItems = append(orderItems, models.LineItem{
+			ItemID:   item.ItemID,
+			Quantity: item.Quantity,
+			Price:    storeItem.Price,
+		})
+	}
+
+	// Process payment (mock)
+	paymentResult := mockProcessPayment(total)
+
+	status := "paid"
+	if !paymentResult.Success {
+		status = "failed"
+	}
+
+	order := h.store.CreateOrder(req.UserID, orderItems, total, status)
+
+	if paymentResult.Success {
+		writeJSON(w, http.StatusCreated, map[string]any{
+			"order":   order,
+			"payment": paymentResult,
+		})
+	} else {
+		writeJSON(w, http.StatusPaymentRequired, map[string]any{
+			"order":   order,
+			"payment": paymentResult,
+		})
+	}
+}
+
+// writeJSON encodes v as JSON and writes it to the response.
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
+}
+
+type CreateUserCartRequest struct {
+	UserID int `json:"user_id"`
+	Items  []struct {
+		ItemID   int `json:"item_id"`
+		Quantity int `json:"quantity"`
+	} `json:"items"`
+}
+
+func (h *Handler) CreateUserCartAndAddItems(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req CreateUserCartRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if h.store.GetUserCart(req.UserID) != nil {
+		http.Error(w, "cart already exists", http.StatusConflict)
+		return
+	}
+
+	if len(req.Items) == 0 {
+		http.Error(w, "can't create empty cart", http.StatusBadRequest)
+		return
+	}
+
+	orderItems := make([]models.LineItem, 0, len(req.Items))
+	for _, item := range req.Items {
+		storeItem := h.store.GetItem(item.ItemID)
+		if storeItem == nil {
+			http.Error(w, fmt.Sprintf("Item %d not found", item.ItemID), http.StatusBadRequest)
+			return
+		}
+		orderItems = append(orderItems, models.LineItem{
+			ItemID:   item.ItemID,
+			Quantity: item.Quantity,
+			Price:    storeItem.Price,
+		})
+	}
+
+	userCart := &models.Cart{
+		ID:     fmt.Sprintf("cart_%d", time.Now().UnixNano()),
+		UserID: req.UserID,
+		Items:  orderItems,
+	}
+
+	h.store.CreateUserCart(userCart)
+	writeJSON(w, http.StatusCreated, userCart)
+}
+
+func (h *Handler) GetUserCart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userIDStr := r.Header.Get("X-User-ID")
+	if userIDStr == "" {
+		http.Error(w, "missing X-User-ID header", http.StatusBadRequest)
+		return
+	}
+
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		http.Error(w, "invalid X-User-ID header", http.StatusBadRequest)
+		return
+	}
+
+	cart := h.store.GetUserCart(userID)
+	if cart == nil {
+		emptyCart := &models.Cart{
+			ID:     "",
+			UserID: userID,
+			Items:  []models.LineItem{},
+		}
+		writeJSON(w, http.StatusOK, emptyCart)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, cart)
 }
