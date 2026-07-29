@@ -1,26 +1,32 @@
 package models
 
-// Define your domain models here:
-// - Item: ID (int), Name (string), Description (string), Price (int, in cents), Stock (int)
-// - LineItem: ItemID (int), Quantity (int), Price (int)
-// - Order: ID (int), UserID (int), Items ([]LineItem), Total (int), Status (string)
-
+// Item represents a product available for purchase.
 type Item struct {
 	ID          int    `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	Price       int    `json:"price"`
-	StockSize   int    `json:"stock_size"`
+	Price       int    `json:"price"` // Price in cents
+	Stock       int    `json:"stock"`
 }
+
+// LineItem is a line item in an order.
 type LineItem struct {
 	ItemID   int `json:"item_id"`
 	Quantity int `json:"quantity"`
-	Price    int `json:"price"`
+	Price    int `json:"price"` // Price at time of adding
 }
+
+// Order represents a completed purchase.
 type Order struct {
-	ID         int        `json:"id"`
-	UserID     int        `json:"user_id"`
-	Items      []LineItem `json:"line_items"`
-	TotalPrice int        `json:"total_price"`
-	Status     string     `json:"status"`
+	ID     int        `json:"id"`
+	UserID int        `json:"user_id"`
+	Items  []LineItem `json:"items"`
+	Total  int        `json:"total"`
+	Status string     `json:"status"` // pending, paid, failed
+}
+
+type Cart struct {
+	ID     string     `json:"id"`
+	UserID int        `json:"user_id"`
+	Items  []LineItem `json:"items"`
 }

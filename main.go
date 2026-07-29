@@ -1,17 +1,32 @@
 package main
 
 import (
-	"checkout-api/handlers"
-	"checkout-api/store"
 	"log"
 	"net/http"
+
+	"checkout-api/handlers"
+	"checkout-api/store"
 )
 
 func main() {
-	itemStore := store.NewStore()
-	handler := handlers.NewHandler(itemStore)
-	http.HandleFunc("/items", handler.GetItems)
-	http.HandleFunc("/items/", handler.GetItemByID)
+	s := store.NewStore()
+	h := handlers.NewHandler(s)
+
+	http.HandleFunc("/user/cart",
+		func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				h.GetUserCart(w, r)
+			case http.MethodPost:
+				h.CreateUserCartAndAddItems(w, r)
+			default:
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			}
+		})
+
+	http.HandleFunc("/items", h.GetItems)
+	http.HandleFunc("/items/", h.GetItemByID)
+	http.HandleFunc("/orders", h.CreateOrder)
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
