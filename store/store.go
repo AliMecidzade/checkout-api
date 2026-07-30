@@ -85,3 +85,30 @@ func (s *Store) UpdateCartItemQuantity(userID int, itemId int, quantity int) err
 	return fmt.Errorf("item %d not found in cart", itemId)
 
 }
+
+func (s *Store) DeleteItemFromCart(userID int, itemId int) error {
+	cart, ok := s.carts[userID]
+	if !ok {
+		return fmt.Errorf("cart not found")
+	}
+
+	for i, item := range cart.Items {
+		if item.ItemID == itemId {
+			cart.Items = append(cart.Items[:i], cart.Items[i+1:]...)
+			if len(cart.Items) == 0 {
+				s.DeleteCart(userID)
+			}
+			return nil
+		}
+	}
+
+	return fmt.Errorf("item %d not found in cart", itemId)
+}
+
+func (s *Store) DeleteCart(userID int) error {
+	if _, ok := s.carts[userID]; !ok {
+		return fmt.Errorf("cart not found")
+	}
+	delete(s.carts, userID)
+	return nil
+}

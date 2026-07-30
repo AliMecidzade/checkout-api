@@ -19,6 +19,8 @@ type ItemStore interface {
 	CreateUserCart(cart *models.Cart)
 	GetUserCart(userID int) *models.Cart
 	UpdateCartItemQuantity(userID int, itemId int, quantity int) error
+
+	DeleteItemFromCart(userID int, itemId int) error
 }
 
 // Handler holds dependencies for HTTP handlers.
@@ -43,6 +45,10 @@ type CreateOrderRequest struct {
 type UpdateCartItemRequest struct {
 	UserID   int `json:"user_id"`
 	Quantity int `json:"quantity"`
+}
+
+type DeleteItemFromCartRequest struct {
+	UserID int `json:"user_id"`
 }
 
 // PaymentResult represents a response from the payment provider.
@@ -213,6 +219,51 @@ func (h *Handler) CreateUserCartAndAddItems(w http.ResponseWriter, r *http.Reque
 
 	h.store.CreateUserCart(userCart)
 	writeJSON(w, http.StatusCreated, userCart)
+}
+
+func (h *Handler) DeleteItemFromCart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req DeleteItemFromCartRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.UserID <= 0 {
+		http.Error(w, "user_id must be positive", http.StatusBadRequest)
+		return
+	}
+
+	itemIdStr := strings.TrimPrefix(r.URL.Path, "/user/cart/items/")
+
+	itemId, err := strconv.Atoi(itemIdStr)
+
+	if err != nil {
+		http.Error(w, "Invalid item ID", http.StatusBadRequest)
+		return
+	}
+
+	if itemId <= 0 {
+		http.Error(w, "item_id must be positive", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.DeleteItemFromCart(req.UserID, itemId); err != nil {
+		http.Error(w, "item not found", http.StatusNotFound)
+		return
+	}
+
+	cart := h.store.GetUserCart(req.UserID)
+	if cart == nil {
+		cart = &models.Cart{ID: "", UserID: req.UserID, Items: []models.LineItem{}}
+
+	}
+	writeJSON(w, http.StatusOK, cart)
+
 }
 
 func (h *Handler) UpdateCartItemQuantity(w http.ResponseWriter, r *http.Request) {
