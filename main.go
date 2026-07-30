@@ -25,14 +25,17 @@ func main() {
 		})
 	http.HandleFunc("/user/cart/items/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
-		case http.MethodPatch:h.UpdateCartItemQuantity(w, r)
-		case http.MethodDelete:h.DeleteItemFromCart(w, r)
+		case http.MethodPatch:
+			h.UpdateCartItemQuantity(w, r)
+		case http.MethodDelete:
+			h.DeleteItemFromCart(w, r)
 
 		}
 	})
 	http.HandleFunc("/items", h.GetItems)
 	http.HandleFunc("/items/", h.GetItemByID)
 	http.HandleFunc("/orders", h.CreateOrder)
+	http.HandleFunc("/user/orders", h.PlaceOrder)
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }

@@ -3,6 +3,7 @@ package store
 import (
 	"checkout-api/models"
 	"fmt"
+	"time"
 )
 
 // Store is an in-memory store for items and orders.
@@ -11,6 +12,14 @@ type Store struct {
 	orders      map[int]*models.Order
 	nextOrderID int
 	carts       map[int]*models.Cart
+	idempotency map[string]*IdempotencyEntry
+}
+
+type IdempotencyEntry struct {
+	RequestBody []byte
+	StatusCode  int
+	Response    []byte
+	CreatedAt   time.Time
 }
 
 // NewStore creates a Store pre-loaded with seed data.
@@ -20,6 +29,7 @@ func NewStore() *Store {
 		orders:      make(map[int]*models.Order),
 		nextOrderID: 1,
 		carts:       make(map[int]*models.Cart),
+		idempotency: make(map[string]*IdempotencyEntry),
 	}
 
 	s.items[1] = &models.Item{ID: 1, Name: "Laptop", Description: "A fast laptop", Price: 120000, Stock: 10}
@@ -86,10 +96,34 @@ func (s *Store) UpdateCartItemQuantity(userID int, itemId int, quantity int) err
 
 }
 
+func (s *Store) GetIdempotencyKey(key string) *IdempotencyEntry {
+	entry, ok := s.idempotency[key]
+
+	if !ok {
+		return nil
+	}
+
+	if time.Since(entry.CreatedAt) > 24*time.Hour {
+		delete(s.idempotency, key)
+		return nil
+	}
+	return entry
+}
+
+func (s *Store) SaveIdempotencyKey(key string, body []byte, statusCode int, response []byte) {
+	s.idempotency[key] = &IdempotencyEntry{
+		RequestBody: body,
+		StatusCode:  statusCode,
+		Response:    response,
+		CreatedAt:   time.Now(),
+	}
+}
+
 func (s *Store) DeleteItemFromCart(userID int, itemId int) error {
 	cart, ok := s.carts[userID]
 	if !ok {
 		return fmt.Errorf("cart not found")
+
 	}
 
 	for i, item := range cart.Items {

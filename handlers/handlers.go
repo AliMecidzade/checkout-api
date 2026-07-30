@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"bytes"
+	"checkout-api/store"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -20,6 +23,11 @@ type ItemStore interface {
 	GetUserCart(userID int) *models.Cart
 	UpdateCartItemQuantity(userID int, itemId int, quantity int) error
 
+	GetIdempotencyKey(key string) *store.IdempotencyEntry
+
+	SaveIdempotencyKey(key string, body []byte, statusCode int, response []byte)
+
+	DeleteCart(userID int) error
 	DeleteItemFromCart(userID int, itemId int) error
 }
 
@@ -48,6 +56,10 @@ type UpdateCartItemRequest struct {
 }
 
 type DeleteItemFromCartRequest struct {
+	UserID int `json:"user_id"`
+}
+
+type PlaceOrderRequest struct {
 	UserID int `json:"user_id"`
 }
 
@@ -104,6 +116,98 @@ func (h *Handler) GetItemByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, item)
+}
+
+func (h *Handler) PlaceOrder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	idempotencyKey := r.Header.Get("X-Idempotency-Key")
+
+	if idempotencyKey == "" {
+		http.Error(w, "missing idempotency key", http.StatusBadRequest)
+		return
+	}
+
+	body, _ := io.ReadAll(r.Body)
+	r.Body = io.NopCloser(bytes.NewReader(body))
+
+	entry := h.store.GetIdempotencyKey(idempotencyKey)
+	if entry != nil {
+		if !bytes.Equal(body, entry.RequestBody) {
+			http.Error(w, "idempotency key mismatch", http.StatusConflict)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(entry.StatusCode)
+		w.Write(entry.Response)
+		return
+
+	}
+
+	var req PlaceOrderRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.UserID <= 0 {
+		http.Error(w, "Invalid user ID", http.StatusBadRequest)
+		return
+	}
+
+	total := 0
+	cart := h.store.GetUserCart(req.UserID)
+
+	if cart == nil {
+		http.Error(w, "cart not found", http.StatusBadRequest)
+		return
+	}
+
+	orderItems := make([]models.LineItem, 0, len(cart.Items))
+
+	for _, item := range cart.Items {
+		storeItem := h.store.GetItem(item.ItemID)
+		if storeItem == nil {
+			http.Error(w, "Item not found", http.StatusNotFound)
+			return
+		}
+		itemTotal := storeItem.Price * item.Quantity
+		total += itemTotal
+		orderItems = append(orderItems, models.LineItem{
+			ItemID:   item.ItemID,
+			Quantity: item.Quantity,
+			Price:    storeItem.Price,
+		})
+	}
+
+	paymentResult := mockProcessPayment(total)
+
+	status := "paid"
+	httpStatus := http.StatusCreated
+	if !paymentResult.Success {
+		status = "failed"
+		httpStatus = http.StatusPaymentRequired
+
+	}
+
+	order := h.store.CreateOrder(req.UserID, orderItems, total, status)
+
+	if paymentResult.Success {
+		h.store.DeleteCart(req.UserID)
+	}
+
+	resp, _ := json.Marshal(map[string]any{
+		"order":   order,
+		"payment": paymentResult,
+	})
+	h.store.SaveIdempotencyKey(idempotencyKey, body, httpStatus, resp)
+	writeJSON(w, httpStatus, map[string]any{
+		"order":   order,
+		"payment": paymentResult,
+	})
 }
 
 // CreateOrder handles POST /orders — creates an order with mock payment.
@@ -257,12 +361,7 @@ func (h *Handler) DeleteItemFromCart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cart := h.store.GetUserCart(req.UserID)
-	if cart == nil {
-		cart = &models.Cart{ID: "", UserID: req.UserID, Items: []models.LineItem{}}
-
-	}
-	writeJSON(w, http.StatusOK, cart)
+	w.WriteHeader(http.StatusNoContent)
 
 }
 
