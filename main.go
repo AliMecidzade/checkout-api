@@ -29,7 +29,8 @@ func main() {
 			h.UpdateCartItemQuantity(w, r)
 		case http.MethodDelete:
 			h.DeleteItemFromCart(w, r)
-
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
 	http.HandleFunc("/items", h.GetItems)
