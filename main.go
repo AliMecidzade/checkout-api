@@ -1,20 +1,23 @@
 package main
 
 import (
+	"checkout-api/handlers"
+	"checkout-api/store"
 	"context"
 	"fmt"
 	"log"
 	"net/http"
 
-	"checkout-api/handlers"
-	"checkout-api/store"
-
 	"github.com/jackc/pgx/v5"
 )
 
 func main() {
+	if err := loadEnv(".env"); err != nil {
+		log.Printf("failed to load .env: %v", err)
+	}
+
 	ctx := context.Background()
-	conn, err := pgx.Connect(ctx, "postgresql://checkout:secret@localhost:5432/checkout")
+	conn, err := pgx.Connect(ctx, getenv("DATABASE_URL", "postgresql://postgres:IRONMANisaHUMAN789@localhost:5432/postgres"))
 	if err != nil {
 		panic(err)
 	}
@@ -53,9 +56,11 @@ func main() {
 		})
 	http.HandleFunc("/user/orders", h.CreateOrderFromCart)
 
+	http.HandleFunc("/signup", h.SignUp)
 	http.HandleFunc("/items", h.GetItems)
 	http.HandleFunc("/items/", h.GetItemByID)
 
-	fmt.Println("Server starting on :8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	port := getenv("PORT", "8080")
+	fmt.Println("Server starting on :" + port)
+	log.Fatal(http.ListenAndServe(":"+port, nil))
 }

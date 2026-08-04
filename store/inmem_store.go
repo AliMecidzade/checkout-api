@@ -44,7 +44,7 @@ func (s *InMemStore) GetItem(_ context.Context, id int) *models.Item {
 }
 
 // CreateOrder creates a new order and returns it.
-func (s *InMemStore) CreateOrder(_ context.Context, userID int, items []models.LineItem, total int, status string) *models.Order {
+func (s *InMemStore) CreateOrder(_ context.Context, userID int, items []models.LineItem, total int, status string) (*models.Order, error) {
 	order := &models.Order{
 		ID:     s.nextOrderID,
 		UserID: userID,
@@ -54,7 +54,7 @@ func (s *InMemStore) CreateOrder(_ context.Context, userID int, items []models.L
 	}
 	s.orders[order.ID] = order
 	s.nextOrderID++
-	return order
+	return order, nil
 }
 
 func (s *InMemStore) CreateUserCart(_ context.Context, cart *models.Cart) {

@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -10,14 +11,17 @@ import (
 	"time"
 
 	"checkout-api/models"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // ItemStore defines the data operations the handler needs.
 type ItemStore interface {
+	SignUp(ctx context.Context, password, email string) (*models.User, error)
 	GetItems(ctx context.Context) ([]*models.Item, error)
 	// TODO: refactor all methods to receive an extra context.Context as the first argument and return a second value of error type
 	GetItem(ctx context.Context, id int) *models.Item
-	CreateOrder(ctx context.Context, userID int, items []models.LineItem, total int, status string) *models.Order
+	CreateOrder(ctx context.Context, userID int, items []models.LineItem, total int, status string) (*models.Order, error)
 	CreateUserCart(ctx context.Context, cart *models.Cart)
 	GetUserCart(ctx context.Context, userID int) *models.Cart
 	DeleteUserCart(ctx context.Context, userID int)
@@ -54,6 +58,11 @@ type CreateUserCartRequest struct {
 		ItemID   int `json:"item_id"`
 		Quantity int `json:"quantity"`
 	} `json:"items"`
+}
+
+type SignUpRequest struct {
+	Password string `json:"password"`
+	Email    string `json:"email"`
 }
 
 type AddItemToCartRequest struct {
@@ -303,7 +312,11 @@ func (h *Handler) CreateOrderFromCart(w http.ResponseWriter, r *http.Request) {
 		status = "failed"
 	}
 
-	order := h.store.CreateOrder(r.Context(), req.UserID, cart.Items, total, status)
+	order, err := h.store.CreateOrder(r.Context(), req.UserID, cart.Items, total, status)
+	if err != nil {
+		http.Error(w, "failed to create order", http.StatusInternalServerError)
+		return
+	}
 
 	if paymentResult.Success {
 		h.store.DeleteUserCart(r.Context(), req.UserID)
@@ -413,7 +426,11 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		status = "failed"
 	}
 
-	order := h.store.CreateOrder(r.Context(), req.UserID, orderItems, total, status)
+	order, err := h.store.CreateOrder(r.Context(), req.UserID, orderItems, total, status)
+	if err != nil {
+		http.Error(w, "failed to create order", http.StatusInternalServerError)
+		return
+	}
 
 	if paymentResult.Success {
 		writeJSON(w, http.StatusCreated, map[string]any{
@@ -426,6 +443,43 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 			"payment": paymentResult,
 		})
 	}
+}
+
+func (h *Handler) SignUp(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req SignUpRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if len(req.Email) == 0 {
+		http.Error(w, "Email is required", http.StatusBadRequest)
+		return
+	}
+	if len(req.Password) == 0 {
+		http.Error(w, "Password is required", http.StatusBadRequest)
+		return
+	}
+
+	user, err := h.store.SignUp(r.Context(), req.Password, req.Email)
+
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			http.Error(w, "user already exists", http.StatusConflict)
+			return
+		}
+		http.Error(w, "failed to sign up", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, user)
+
 }
 
 // writeJSON encodes v as JSON and writes it to the response.

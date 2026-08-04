@@ -22,6 +22,18 @@ func NewPostgresStore(conn *pgx.Conn) *PostgresStore {
 	return s
 }
 
+func (s *PostgresStore) SignUp(ctx context.Context, password, email string) (*models.User, error) {
+	var u models.User
+	err := s.conn.QueryRow(ctx,
+		"INSERT INTO users (password, email) VALUES ($1,$2) RETURNING id, password, email, created_at",
+		password, email).
+		Scan(&u.ID, &u.Password, &u.Email, &u.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
 // GetItems returns all available items.
 func (s *PostgresStore) GetItems(ctx context.Context) ([]*models.Item, error) {
 	rows, err := s.conn.Query(ctx, "select * from items")
@@ -66,11 +78,41 @@ func (s *PostgresStore) GetItem(ctx context.Context, id int) *models.Item {
 	return &item
 }
 
-func (s *PostgresStore) CreateOrder(ctx context.Context, userID int, items []models.LineItem, total int, status string) *models.Order {
-	// TODO: create an order in a transaction
-	// Use a context.Context passed as the first argument from your method
-	// Use transaction with conn.Begin(), conn.Exec()
-	return nil
+func (s *PostgresStore) CreateOrder(ctx context.Context, userID int, items []models.LineItem, total int, status string) (*models.Order, error) {
+	tx, err := s.conn.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("unable to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var orderID int
+	err = tx.QueryRow(ctx,
+		"INSERT INTO orders (user_id, total, status) VALUES ($1,$2,$3) RETURNING id", userID, total, status).Scan(&orderID)
+	if err != nil {
+		return nil, fmt.Errorf("unable to insert order: %w", err)
+	}
+
+	for _, item := range items {
+		_, err = tx.Exec(ctx,
+			"INSERT INTO order_items (order_id, item_id, price, quantity) VALUES ($1,$2,$3,$4)", orderID, item.ItemID, item.Price, item.Quantity)
+		if err != nil {
+			return nil, fmt.Errorf("unable to insert order_item: %w", err)
+		}
+	}
+
+	order := &models.Order{
+		ID:     orderID,
+		UserID: userID,
+		Items:  items,
+		Total:  total,
+		Status: status,
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return order, nil
 }
 
 func (s *PostgresStore) CreateUserCart(ctx context.Context, cart *models.Cart) {
@@ -102,6 +144,7 @@ func (s *PostgresStore) CreateUserCart(ctx context.Context, cart *models.Cart) {
 	if err := tx.Commit(ctx); err != nil {
 		fmt.Println("failed to commit transaction", err)
 	}
+
 }
 
 func (s *PostgresStore) GetUserCart(ctx context.Context, userID int) *models.Cart {
