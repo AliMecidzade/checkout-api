@@ -27,6 +27,7 @@ type ItemStore interface {
 	DeleteUserCart(ctx context.Context, userID int)
 	UpdateCartItem(ctx context.Context, userID int, itemID int, quantity int) bool
 	RemoveCartItem(ctx context.Context, userID int, itemID int) bool
+	IncreaseItemStock(ctx context.Context, itemID int, qty int) error
 }
 
 // Handler holds dependencies for HTTP handlers.
@@ -375,6 +376,52 @@ func (h *Handler) GetItemByID(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
 		http.Error(w, "Invalid item ID", http.StatusBadRequest)
+		return
+	}
+
+	item := h.store.GetItem(r.Context(), id)
+	if item == nil {
+		http.Error(w, "Item not found", http.StatusNotFound)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, item)
+}
+
+// UpdateItemStockRequest is the payload for PATCH /items/{id}/stock.
+type UpdateItemStockRequest struct {
+	Quantity int `json:"quantity"`
+}
+
+// UpdateItemStock handles PATCH /items/{id}/stock — increases an item's stock.
+func (h *Handler) UpdateItemStock(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPatch {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	idStr := strings.TrimPrefix(r.URL.Path, "/items/")
+	idStr = strings.TrimSuffix(idStr, "/stock")
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid item ID", http.StatusBadRequest)
+		return
+	}
+
+	var req UpdateItemStockRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Quantity <= 0 {
+		http.Error(w, "quantity must be greater than 0", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.store.IncreaseItemStock(r.Context(), id, req.Quantity); err != nil {
+		http.Error(w, "failed to increase item stock", http.StatusInternalServerError)
 		return
 	}
 

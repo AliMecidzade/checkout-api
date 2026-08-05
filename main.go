@@ -11,6 +11,16 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+//-----------------------TEST MONGODB OPERATIONS----------------------
+//$env:Path = [System.Environment]::GetEnvironmentVariable("Path","User")
+//mongosh --quiet --eval "db.runCommand({ping:1})"
+// go run ./cmd/mongo_demo
+
+//-----------------TEST PATCH ITEM STOCK WITH COMMAND-----------------------
+//curl.exe -X PATCH http://localhost:8090/items/3/stock -H "Content-Type: application/json" -d '{"quantity": 5}'
+
+//---------------------------------------------------------------------------
+
 //---------------------------RESETTING THE DB----------------------------------
 //psql "$DATABASE_URL" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public
 
@@ -38,6 +48,7 @@ import (
 // products - itemNo, itemDesc, itemPrice
 // orders - order_id, date, cust_id
 // order_items - order_id, item_no, quantity
+
 func main() {
 	if err := loadEnv(".env"); err != nil {
 		log.Printf("failed to load .env: %v", err)
@@ -86,6 +97,7 @@ func main() {
 	http.HandleFunc("/signup", h.SignUp)
 	http.HandleFunc("/items", h.GetItems)
 	http.HandleFunc("/items/", h.GetItemByID)
+	http.HandleFunc("/items/{id}/stock", h.UpdateItemStock)
 
 	port := getenv("PORT", "8080")
 	fmt.Println("Server starting on :" + port)

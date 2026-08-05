@@ -1,0 +1,13 @@
+BEGIN;
+
+DROP TRIGGER IF EXISTS items_set_updated_at ON items;
+
+DROP FUNCTION IF EXISTS set_updated_at();
+
+DROP PROCEDURE IF EXISTS increase_item_stock(INTEGER, INTEGER);
+
+DROP FUNCTION IF EXISTS is_item_in_stock(INTEGER, INTEGER);
+
+ALTER TABLE items DROP COLUMN IF EXISTS updated_at;
+
+COMMIT;

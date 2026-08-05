@@ -36,7 +36,7 @@ func (s *PostgresStore) SignUp(ctx context.Context, password, email string) (*mo
 
 // GetItems returns all available items.
 func (s *PostgresStore) GetItems(ctx context.Context) ([]*models.Item, error) {
-	rows, err := s.conn.Query(ctx, "select * from items")
+	rows, err := s.conn.Query(ctx, "select id, name, description, price, stock, created_at from items")
 	if err != nil {
 		return nil, fmt.Errorf("%w: failed to run query on GetItems", err)
 	}
@@ -76,6 +76,11 @@ func (s *PostgresStore) GetItem(ctx context.Context, id int) *models.Item {
 		return nil
 	}
 	return &item
+}
+
+func (s *PostgresStore) IncreaseItemStock(ctx context.Context, itemID, qty int) error {
+	_, err := s.conn.Exec(ctx, "CALL increase_item_stock($1, $2)", itemID, qty)
+	return err
 }
 
 func (s *PostgresStore) CreateOrder(ctx context.Context, userID int, items []models.LineItem, total int, status string) (*models.Order, error) {
