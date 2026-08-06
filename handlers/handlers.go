@@ -385,14 +385,7 @@ func (h *Handler) LoginUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// issue jwt
-	fifteenAfter := time.Now().Add(15 * time.Minute)
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
-		ExpiresAt: jwt.NewNumericDate(fifteenAfter),
-		Subject:   strconv.Itoa(user.ID),
-		IssuedAt:  jwt.NewNumericDate(time.Now()),
-	})
-
-	signedString, err := token.SignedString([]byte(SigningSecret))
+	signedString, err := generateJWT(user.ID)
 	if err != nil {
 		fmt.Printf("cannot generate signed string %q", err.Error())
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -478,12 +471,70 @@ func generateRefreshToken() (string, []byte, error) {
 
 }
 
-func (h *Handler) IssueJWT(w http.ResponseWriter, r *http.Request) {
-	// TODO: implement issueing of new JWT with refresh token
-	// check if refresh_token exists in the db and still active
-	// generate a new JWT
-	// generate a new random string (bonus: if you use a CSPRNG to generate a random sequence of bytes) as refresh_token
-	// save new refresh token in db
-	// deactivate old refresh token
+func generateJWT(userID int) (string, error) {
+	fifteenAfter := time.Now().Add(15 * time.Minute)
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
+		ExpiresAt: jwt.NewNumericDate(fifteenAfter),
+		Subject:   strconv.Itoa(userID),
+		IssuedAt:  jwt.NewNumericDate(time.Now()),
+	})
+	return token.SignedString([]byte(SigningSecret))
+}
 
+func (h *Handler) IssueJWT(w http.ResponseWriter, r *http.Request) {
+	givenRefreshToken := r.URL.Query().Get("refresh_token")
+	if givenRefreshToken == "" {
+		http.Error(w, "Missing refresh token", http.StatusBadRequest)
+		return
+	}
+
+	sum := sha256.Sum256([]byte(givenRefreshToken))
+	hash := sum[:]
+
+	refreshToken, err := h.store.FindRefreshToken(r.Context(), hash)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		fmt.Printf("cannot find refresh token %q", err.Error())
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	if !refreshToken.IsActive || refreshToken.ExpiresAt.Before(time.Now()) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	signedString, err := generateJWT(refreshToken.UserID)
+	if err != nil {
+		fmt.Printf("cannot generate signed string %q", err.Error())
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	newRefreshToken, newHash, err := generateRefreshToken()
+	if err != nil {
+		fmt.Printf("cannot generate refresh token %q", err.Error())
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	err = h.store.SaveRefreshToken(r.Context(), refreshToken.UserID, newHash, time.Now().Add(7*24*time.Hour))
+	if err != nil {
+		fmt.Printf("cannot save refresh token %q", err.Error())
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	err = h.store.DeactivateRefreshToken(r.Context(), hash)
+	if err != nil {
+		fmt.Printf("cannot deactivate refresh token %q", err.Error())
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, AuthResponse{
+		JWT:          signedString,
+		RefreshToken: newRefreshToken,
+	})
 }
