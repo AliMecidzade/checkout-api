@@ -28,19 +28,20 @@ type ItemStore interface {
 	UpdateCartItem(ctx context.Context, userID int, itemID int, quantity int) bool
 	RemoveCartItem(ctx context.Context, userID int, itemID int) bool
 	IncreaseItemStock(ctx context.Context, itemID int, qty int) error
+
+	GetIdempotency(ctx context.Context, key string) (*models.IdempotencyRecord, error)
+	SaveIdempotency(ctx context.Context, record *models.IdempotencyRecord) error
 }
 
 // Handler holds dependencies for HTTP handlers.
 type Handler struct {
-	store            ItemStore
-	idempotencyCache map[string]*IdempotencyRecord
+	store ItemStore
 }
 
 // NewHandler creates a Handler with the given store.
 func NewHandler(s ItemStore) *Handler {
 	return &Handler{
-		store:            s,
-		idempotencyCache: make(map[string]*IdempotencyRecord),
+		store: s,
 	}
 }
 
@@ -88,12 +89,6 @@ type GetUserCartRequest struct {
 
 type CreateOrderFromCartRequest struct {
 	UserID int `json:"user_id"`
-}
-
-type IdempotencyRecord struct {
-	Response   []byte
-	StatusCode int
-	Expiry     time.Time
 }
 
 // PaymentResult represents a response from the payment provider.
@@ -274,14 +269,16 @@ func (h *Handler) CreateOrderFromCart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if record, exists := h.idempotencyCache[idempotencyKey]; exists {
-		if time.Now().Before(record.Expiry) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(record.StatusCode)
-			w.Write(record.Response)
-			return
-		}
-		delete(h.idempotencyCache, idempotencyKey)
+	record, err := h.store.GetIdempotency(r.Context(), idempotencyKey)
+	if err != nil {
+		http.Error(w, "failed to check idempotency", http.StatusInternalServerError)
+		return
+	}
+	if record != nil && time.Now().Before(record.ExpiresAt) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(record.StatusCode)
+		w.Write(record.Response)
+		return
 	}
 
 	var req CreateOrderFromCartRequest
@@ -335,10 +332,14 @@ func (h *Handler) CreateOrderFromCart(w http.ResponseWriter, r *http.Request) {
 		statusCode = http.StatusPaymentRequired
 	}
 
-	h.idempotencyCache[idempotencyKey] = &IdempotencyRecord{
+	if err := h.store.SaveIdempotency(r.Context(), &models.IdempotencyRecord{
+		Key:        idempotencyKey,
 		Response:   responseBody,
 		StatusCode: statusCode,
-		Expiry:     time.Now().Add(24 * time.Hour),
+		ExpiresAt:  time.Now().Add(24 * time.Hour),
+	}); err != nil {
+		http.Error(w, "failed to save idempotency", http.StatusInternalServerError)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")

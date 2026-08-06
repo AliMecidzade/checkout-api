@@ -227,3 +227,29 @@ func (s *PostgresStore) RemoveCartItem(ctx context.Context, userID int, itemID i
 
 	return cmd.RowsAffected() > 0
 }
+
+func (s *PostgresStore) GetIdempotency(ctx context.Context, key string) (*models.IdempotencyRecord, error) {
+	var record models.IdempotencyRecord
+	err := s.conn.QueryRow(ctx,
+		"SELECT key, response, status, expires_at FROM idempotency WHERE key = $1", key).
+		Scan(&record.Key, &record.Response, &record.StatusCode, &record.ExpiresAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &record, nil
+}
+
+func (s *PostgresStore) SaveIdempotency(ctx context.Context, record *models.IdempotencyRecord) error {
+	_, err := s.conn.Exec(ctx,
+		`INSERT INTO idempotency (key, response, status, expires_at)
+		 VALUES ($1, $2, $3, $4)
+		 ON CONFLICT (key) DO UPDATE SET
+			response   = EXCLUDED.response,
+			status     = EXCLUDED.status,
+			expires_at = EXCLUDED.expires_at`,
+		record.Key, record.Response, record.StatusCode, record.ExpiresAt)
+	return err
+}

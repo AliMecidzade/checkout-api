@@ -40,3 +40,10 @@ type User struct {
 	Password  string    `json:"password"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+type IdempotencyRecord struct {
+	Key        string
+	Response   []byte
+	StatusCode int
+	ExpiresAt  time.Time
+}
