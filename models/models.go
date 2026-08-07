@@ -18,8 +18,8 @@ type RefreshToken struct {
 	TokenHash []byte    `json:"token_hash"`
 	IsActive  bool      `json:"is_active"`
 	ExpiresAt time.Time `json:"expires_at"`
-	CreatedAt time.Time `json:"created_at"`
-	RevokedAt time.Time `json:"revoked_at"`
+	CreatedAt time.Time  `json:"created_at"`
+	RevokedAt *time.Time `json:"revoked_at,omitempty"`
 }
 
 // LineItem is a line item in an order.

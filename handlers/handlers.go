@@ -42,7 +42,12 @@ type ItemStore interface {
 	DeactivateRefreshToken(ctx context.Context, tokenHash []byte) error
 }
 
-var SigningSecret string = os.Getenv("SIGNING_SECRET")
+// signingSecret returns the JWT signing secret. os.Getenv is read lazily
+// because godotenv.Load() runs inside main() — in package init the .env file
+// is not loaded yet.
+func signingSecret() []byte {
+	return []byte(os.Getenv("SIGNING_SECRET"))
+}
 
 // Handler holds dependencies for HTTP handlers.
 type Handler struct {
@@ -73,8 +78,7 @@ func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		scheme := "bearer "
-		userScheme := authHeaderStr[:len(scheme)] // BeArER
-		if !strings.EqualFold(scheme, userScheme) {
+		if len(authHeaderStr) <= len(scheme) || !strings.EqualFold(authHeaderStr[:len(scheme)], scheme) {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -85,7 +89,7 @@ func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			userJWT,
 			&claims,
 			func(t *jwt.Token) (any, error) {
-				return []byte(SigningSecret), nil
+				return signingSecret(), nil
 			},
 			jwt.WithValidMethods([]string{"HS256"}),
 		)
@@ -393,12 +397,10 @@ func (h *Handler) LoginUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// store session(refresh token)
-	// TODO: do it yourself
-	// generate a random string(bonus: if you use a CSPRNG to generate a random sequence of bytes)
-	// insert into refresh_tokens (token_value, is_active) values ("sOmERANdomlYGeNERATEDstRing", 1)
 	refreshToken, hash, err := generateRefreshToken()
 	if err != nil {
 		fmt.Printf("cannot generate refresh token %q", err.Error())
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
@@ -407,6 +409,7 @@ func (h *Handler) LoginUser(w http.ResponseWriter, r *http.Request) {
 	err = h.store.SaveRefreshToken(r.Context(), user.ID, hash, expiresAt)
 	if err != nil {
 		fmt.Printf("cannot save refresh token %q", err.Error())
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
@@ -478,7 +481,7 @@ func generateJWT(userID int) (string, error) {
 		Subject:   strconv.Itoa(userID),
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
 	})
-	return token.SignedString([]byte(SigningSecret))
+	return token.SignedString(signingSecret())
 }
 
 func (h *Handler) IssueJWT(w http.ResponseWriter, r *http.Request) {

@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -14,11 +13,6 @@ import (
 // PostgresStore is an in-memory store for items and orders.
 type PostgresStore struct {
 	conn *pgx.Conn
-}
-
-func (s *PostgresStore) AuthMiddleware(next http.Handler) http.Handler {
-	//TODO implement me
-	panic("implement me")
 }
 
 // NewPostgresStore creates a Store pre-loaded with seed data.

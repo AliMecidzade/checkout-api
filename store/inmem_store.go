@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/jackc/pgx/v5"
-	"time"
 )
 
 // InMemStore is an in-memory store for items and orders.
@@ -131,16 +130,4 @@ func (s *InMemStore) FindUserByEmail(_ context.Context, email string) (models.Us
 		return models.User{}, pgx.ErrNoRows
 	}
 	return user, nil
-}
-
-func (s *InMemStore) SaveRefreshToken(_ context.Context, _ int, _ []byte, _ time.Time) error {
-	return nil
-}
-
-func (s *InMemStore) FindRefreshToken(_ context.Context, _ []byte) (models.RefreshToken, error) {
-	return models.RefreshToken{}, pgx.ErrNoRows
-}
-
-func (s *InMemStore) DeactivateRefreshToken(_ context.Context, _ []byte) error {
-	return nil
 }
