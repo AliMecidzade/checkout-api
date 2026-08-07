@@ -4,6 +4,7 @@ go 1.24.0
 
 require (
 	github.com/jackc/pgx/v5 v5.8.0
+	github.com/joho/godotenv v1.5.1
 	go.mongodb.org/mongo-driver/v2 v2.8.0
 )
 

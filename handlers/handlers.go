@@ -29,7 +29,7 @@ type ItemStore interface {
 	RemoveCartItem(ctx context.Context, userID int, itemID int) bool
 	IncreaseItemStock(ctx context.Context, itemID int, qty int) error
 
-	GetIdempotency(ctx context.Context, key string) (*models.IdempotencyRecord, error)
+	GetIdempotency(ctx context.Context, userID int, key string) (*models.IdempotencyRecord, error)
 	SaveIdempotency(ctx context.Context, record *models.IdempotencyRecord) error
 }
 
@@ -269,7 +269,13 @@ func (h *Handler) CreateOrderFromCart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	record, err := h.store.GetIdempotency(r.Context(), idempotencyKey)
+	var req CreateOrderFromCartRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	record, err := h.store.GetIdempotency(r.Context(), req.UserID, idempotencyKey)
 	if err != nil {
 		http.Error(w, "failed to check idempotency", http.StatusInternalServerError)
 		return
@@ -278,12 +284,6 @@ func (h *Handler) CreateOrderFromCart(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(record.StatusCode)
 		w.Write(record.Response)
-		return
-	}
-
-	var req CreateOrderFromCartRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
@@ -333,6 +333,7 @@ func (h *Handler) CreateOrderFromCart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.store.SaveIdempotency(r.Context(), &models.IdempotencyRecord{
+		UserID:     req.UserID,
 		Key:        idempotencyKey,
 		Response:   responseBody,
 		StatusCode: statusCode,

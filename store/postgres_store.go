@@ -90,6 +90,25 @@ func (s *PostgresStore) CreateOrder(ctx context.Context, userID int, items []mod
 	}
 	defer tx.Rollback(ctx)
 
+	// Pessimistic lock: acquire a row lock on each item and verify sufficient
+	// stock before allowing the purchase. SELECT ... FOR UPDATE makes the
+	// check-then-update atomic, so two concurrent orders cannot oversell.
+	for _, item := range items {
+		var stock int
+		err := tx.QueryRow(ctx,
+			"SELECT stock FROM items WHERE id = $1 FOR UPDATE", item.ItemID).
+			Scan(&stock)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, fmt.Errorf("item %d not found", item.ItemID)
+			}
+			return nil, fmt.Errorf("unable to lock item %d: %w", item.ItemID, err)
+		}
+		if stock < item.Quantity {
+			return nil, fmt.Errorf("insufficient stock for item %d: have %d, need %d", item.ItemID, stock, item.Quantity)
+		}
+	}
+
 	var orderID int
 	err = tx.QueryRow(ctx,
 		"INSERT INTO orders (user_id, total, status) VALUES ($1,$2,$3) RETURNING id", userID, total, status).Scan(&orderID)
@@ -228,11 +247,11 @@ func (s *PostgresStore) RemoveCartItem(ctx context.Context, userID int, itemID i
 	return cmd.RowsAffected() > 0
 }
 
-func (s *PostgresStore) GetIdempotency(ctx context.Context, key string) (*models.IdempotencyRecord, error) {
+func (s *PostgresStore) GetIdempotency(ctx context.Context, userID int, key string) (*models.IdempotencyRecord, error) {
 	var record models.IdempotencyRecord
 	err := s.conn.QueryRow(ctx,
-		"SELECT key, response, status, expires_at FROM idempotency WHERE key = $1", key).
-		Scan(&record.Key, &record.Response, &record.StatusCode, &record.ExpiresAt)
+		"SELECT user_id, key, response, status, expires_at FROM idempotency WHERE user_id = $1 AND key = $2", userID, key).
+		Scan(&record.UserID, &record.Key, &record.Response, &record.StatusCode, &record.ExpiresAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -244,12 +263,12 @@ func (s *PostgresStore) GetIdempotency(ctx context.Context, key string) (*models
 
 func (s *PostgresStore) SaveIdempotency(ctx context.Context, record *models.IdempotencyRecord) error {
 	_, err := s.conn.Exec(ctx,
-		`INSERT INTO idempotency (key, response, status, expires_at)
-		 VALUES ($1, $2, $3, $4)
-		 ON CONFLICT (key) DO UPDATE SET
+		`INSERT INTO idempotency (user_id, key, response, status, expires_at)
+		 VALUES ($1, $2, $3, $4, $5)
+		 ON CONFLICT (user_id, key) DO UPDATE SET
 			response   = EXCLUDED.response,
 			status     = EXCLUDED.status,
 			expires_at = EXCLUDED.expires_at`,
-		record.Key, record.Response, record.StatusCode, record.ExpiresAt)
+		record.UserID, record.Key, record.Response, record.StatusCode, record.ExpiresAt)
 	return err
 }

@@ -42,6 +42,7 @@ type User struct {
 }
 
 type IdempotencyRecord struct {
+	UserID     int
 	Key        string
 	Response   []byte
 	StatusCode int

@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/joho/godotenv"
 )
 
 //-----------------------TEST MONGODB OPERATIONS----------------------
@@ -29,6 +31,10 @@ import (
 //----------------------------------------------------------------------------
 
 //-------------------EXPLAIN ANALYZE---------------------------------------
+
+//migrate -database "postgresql://checkout:secret@localhost:5432/checkout" -path migrations up 8
+// migrate -database "postgresql://checkout:secret@localhost:5432/checkout" -path migrations down -all
+
 //INSERT INTO orders (user_id,total,  status)
 //SELECT
 //(i % 1000) + 1,
@@ -49,13 +55,23 @@ import (
 // orders - order_id, date, cust_id
 // order_items - order_id, item_no, quantity
 
+//racing demo
+
+// go run cmd/race_demo/main.go
+// go run cmd/race_demo/main.go -lock
+
 func main() {
-	if err := loadEnv(".env"); err != nil {
+	if err := godotenv.Load(); err != nil {
 		log.Printf("failed to load .env: %v", err)
 	}
 
 	ctx := context.Background()
-	conn, err := pgx.Connect(ctx, getenv("DATABASE_URL", "postgresql://checkout:secret@localhost:5432/checkout"))
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgresql://checkout:secret@localhost:5432/checkout"
+	}
+	conn, err := pgx.Connect(ctx, dsn)
 	if err != nil {
 		panic(err)
 	}
@@ -99,7 +115,10 @@ func main() {
 	http.HandleFunc("/items/", h.GetItemByID)
 	http.HandleFunc("/items/{id}/stock", h.UpdateItemStock)
 
-	port := getenv("PORT", "8080")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
 	fmt.Println("Server starting on :" + port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
