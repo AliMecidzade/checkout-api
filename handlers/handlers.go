@@ -475,9 +475,9 @@ func generateRefreshToken() (string, []byte, error) {
 }
 
 func generateJWT(userID int) (string, error) {
-	fifteenAfter := time.Now().Add(15 * time.Minute)
+	expiringTime := time.Now().Add(30 * time.Second)
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
-		ExpiresAt: jwt.NewNumericDate(fifteenAfter),
+		ExpiresAt: jwt.NewNumericDate(expiringTime),
 		Subject:   strconv.Itoa(userID),
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
 	})
