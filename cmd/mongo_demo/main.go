@@ -38,14 +38,14 @@ func main() {
 
 	items := client.Database("checkout").Collection("items")
 
-	// 1. Insert — add a document
+	// add a document
 	res, err := items.InsertOne(ctx, Item{Name: "T-Shirt", Price: 2500, Stock: 120})
 	if err != nil {
 		log.Fatal("insert:", err)
 	}
 	fmt.Println("[INSERT] id:", res.InsertedID)
 
-	// 2. Retrieve — read it back
+	//  read it back
 	var found Item
 	if err := items.FindOne(ctx, bson.M{"name": "T-Shirt"}).Decode(&found); err != nil {
 		log.Fatal("find:", err)
@@ -64,7 +64,7 @@ func main() {
 	}
 	fmt.Printf("[UPDATE] after: %+v\n", found)
 
-	// 4. Delete — remove the document
+	// remove the document
 	//del, err := items.DeleteOne(ctx, bson.M{"name": "T-Shirt"})
 	//if err != nil {
 	//	log.Fatal("delete:", err)

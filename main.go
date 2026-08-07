@@ -13,10 +13,15 @@ import (
 	"github.com/joho/godotenv"
 )
 
+//DROP SCHEMA public CASCADE ;
+//CREATE SCHEMA public ;
 //-----------------------TEST MONGODB OPERATIONS----------------------
-//$env:Path = [System.Environment]::GetEnvironmentVariable("Path","User")
+
 //mongosh --quiet --eval "db.runCommand({ping:1})"
-// go run ./cmd/mongo_demo
+
+// /home/hp/.local/mongodb/ctl.sh status
+// /home/hp/.local/mongodb/ctl.sh start
+//go run ./cmd/mongo_demo
 
 //-----------------TEST PATCH ITEM STOCK WITH COMMAND-----------------------
 //curl.exe -X PATCH http://localhost:8090/items/3/stock -H "Content-Type: application/json" -d '{"quantity": 5}'
@@ -33,7 +38,7 @@ import (
 //-------------------EXPLAIN ANALYZE---------------------------------------
 
 //migrate -database "postgresql://checkout:secret@localhost:5432/checkout" -path migrations up 8
-// migrate -database "postgresql://checkout:secret@localhost:5432/checkout" -path migrations down -all
+//migrate -database "postgresql://checkout:secret@localhost:5432/checkout" -path migrations down -all
 
 //INSERT INTO orders (user_id,total,  status)
 //SELECT
@@ -57,7 +62,7 @@ import (
 
 //racing demo
 
-// go run cmd/race_demo/main.go
+//go run cmd/race_demo/main.go
 // go run cmd/race_demo/main.go -lock
 
 func main() {
