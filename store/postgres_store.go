@@ -8,24 +8,25 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // PostgresStore is an in-memory store for items and orders.
 type PostgresStore struct {
-	conn *pgx.Conn
+	pool *pgxpool.Pool
 }
 
 // NewPostgresStore creates a Store pre-loaded with seed data.
-func NewPostgresStore(conn *pgx.Conn) *PostgresStore {
+func NewPostgresStore(pool *pgxpool.Pool) *PostgresStore {
 	s := &PostgresStore{
-		conn: conn,
+		pool: pool,
 	}
 	return s
 }
 
 func (s *PostgresStore) DB() *Query {
 	return &Query{
-		DBTX: s.conn,
+		DBTX: s.pool,
 	}
 }
 
@@ -71,7 +72,7 @@ func (s *PostgresStore) GetItem(ctx context.Context, id int) (*models.Item, erro
 }
 
 func (s *PostgresStore) CreateOrder(ctx context.Context, userID int, items []models.LineItem, total int, status string) (*models.Order, error) {
-	tx, err := s.conn.Begin(ctx)
+	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
@@ -177,6 +178,25 @@ func (s *PostgresStore) FindUserByEmail(ctx context.Context, email string) (mode
 func (s *PostgresStore) SaveRefreshToken(ctx context.Context, userID int, tokenHash []byte, expiresAt time.Time) error {
 	_, err := s.DB().InsertRefreshToken(ctx, userID, tokenHash, expiresAt)
 	return err
+}
+
+func (s *PostgresStore) RotateRefreshToken(ctx context.Context, tokenHash []byte, userID int, expiresAt time.Time) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	_, deactivateErr := s.WithTx(tx).DeactivateRefreshToken(ctx, tokenHash)
+	if err != nil {
+		return fmt.Errorf("failed to deactivate refresh token: %w", deactivateErr)
+	}
+
+	_, saveErr := s.WithTx(tx).InsertRefreshToken(ctx, userID, tokenHash, expiresAt)
+	if saveErr != nil {
+		return fmt.Errorf("failed to save refresh token: %w", saveErr)
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *PostgresStore) FindRefreshToken(ctx context.Context, tokenHash []byte) (models.RefreshToken, error) {

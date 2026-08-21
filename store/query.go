@@ -46,6 +46,7 @@ func (q *Query) FindRefreshToken(ctx context.Context, tokenHash []byte) pgx.Row 
 
 func (q *Query) DeactivateRefreshToken(ctx context.Context, tokenHash []byte) (pgconn.CommandTag, error) {
 	return q.DBTX.Exec(ctx, "update refresh_tokens set is_active = false, revoked_at = NOW() where token_hash = $1", tokenHash)
+
 }
 
 func (q *Query) GetItemByIDForUpdate(ctx context.Context, id int) pgx.Row {

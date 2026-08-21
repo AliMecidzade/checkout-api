@@ -40,6 +40,7 @@ type ItemStore interface {
 
 	FindRefreshToken(ctx context.Context, tokenHash []byte) (models.RefreshToken, error)
 	DeactivateRefreshToken(ctx context.Context, tokenHash []byte) error
+	RotateRefreshToken(ctx context.Context, tokenHash []byte, userID int, expiresAt time.Time) error
 }
 
 // signingSecret returns the JWT signing secret. os.Getenv is read lazily
@@ -67,6 +68,22 @@ type IdempotencyRecord struct {
 	Response   []byte
 	StatusCode int
 	Expiry     time.Time
+}
+
+func WithCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+
 }
 
 func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
@@ -523,15 +540,11 @@ func (h *Handler) IssueJWT(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
-	err = h.store.SaveRefreshToken(r.Context(), refreshToken.UserID, newHash, time.Now().Add(7*24*time.Hour))
+	expiringTime := time.Now().Add(7 * 24 * time.Hour)
+	err = h.store.RotateRefreshToken(r.Context(), newHash, refreshToken.UserID, expiringTime)
+
 	if err != nil {
-		fmt.Printf("cannot save refresh token %q", err.Error())
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-	err = h.store.DeactivateRefreshToken(r.Context(), hash)
-	if err != nil {
-		fmt.Printf("cannot deactivate refresh token %q", err.Error())
+		fmt.Printf("cannot rotate refresh token %q", err.Error())
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
