@@ -40,7 +40,8 @@ type ItemStore interface {
 
 	FindRefreshToken(ctx context.Context, tokenHash []byte) (models.RefreshToken, error)
 	DeactivateRefreshToken(ctx context.Context, tokenHash []byte) error
-	RotateRefreshToken(ctx context.Context, tokenHash []byte, userID int, expiresAt time.Time) error
+	RotateRefreshToken(ctx context.Context, oldHash []byte, newHash []byte, userID int, expiresAt time.Time) error
+	RevokeRefreshToken(ctx context.Context, tokenHash []byte) error
 }
 
 // signingSecret returns the JWT signing secret. os.Getenv is read lazily
@@ -72,10 +73,10 @@ type IdempotencyRecord struct {
 
 func WithCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
-		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding")
-
+		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
+		w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, Content-Length, Accept-Encoding, Idempotency-Key")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
 			return
@@ -430,6 +431,15 @@ func (h *Handler) LoginUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	http.SetCookie(w, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    refreshToken,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int((7 * 24 * time.Hour).Seconds()),
+	})
+
 	writeJSON(w, http.StatusOK, AuthResponse{
 		JWT:          signedString,
 		RefreshToken: refreshToken,
@@ -492,7 +502,7 @@ func generateRefreshToken() (string, []byte, error) {
 }
 
 func generateJWT(userID int) (string, error) {
-	expiringTime := time.Now().Add(30 * time.Second)
+	expiringTime := time.Now().Add(15 * time.Minute)
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
 		ExpiresAt: jwt.NewNumericDate(expiringTime),
 		Subject:   strconv.Itoa(userID),
@@ -503,6 +513,9 @@ func generateJWT(userID int) (string, error) {
 
 func (h *Handler) IssueJWT(w http.ResponseWriter, r *http.Request) {
 	givenRefreshToken := r.URL.Query().Get("refresh_token")
+	if cookie, err := r.Cookie("refresh_token"); err == nil {
+		givenRefreshToken = cookie.Value
+	}
 	if givenRefreshToken == "" {
 		http.Error(w, "Missing refresh token", http.StatusBadRequest)
 		return
@@ -541,7 +554,7 @@ func (h *Handler) IssueJWT(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	expiringTime := time.Now().Add(7 * 24 * time.Hour)
-	err = h.store.RotateRefreshToken(r.Context(), newHash, refreshToken.UserID, expiringTime)
+	err = h.store.RotateRefreshToken(r.Context(), hash, newHash, refreshToken.UserID, expiringTime)
 
 	if err != nil {
 		fmt.Printf("cannot rotate refresh token %q", err.Error())
@@ -549,8 +562,36 @@ func (h *Handler) IssueJWT(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	http.SetCookie(w, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    newRefreshToken,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int((7 * 24 * time.Hour).Seconds()),
+	})
+
 	writeJSON(w, http.StatusOK, AuthResponse{
 		JWT:          signedString,
 		RefreshToken: newRefreshToken,
 	})
+}
+
+func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("refresh_token")
+	if err == nil {
+		sum := sha256.Sum256([]byte(cookie.Value))
+		_ = h.store.RevokeRefreshToken(r.Context(), sum[:])
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
+
+	w.WriteHeader(http.StatusNoContent)
 }

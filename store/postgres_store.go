@@ -180,19 +180,19 @@ func (s *PostgresStore) SaveRefreshToken(ctx context.Context, userID int, tokenH
 	return err
 }
 
-func (s *PostgresStore) RotateRefreshToken(ctx context.Context, tokenHash []byte, userID int, expiresAt time.Time) error {
+func (s *PostgresStore) RotateRefreshToken(ctx context.Context, oldHash []byte, newHash []byte, userID int, expiresAt time.Time) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
-	_, deactivateErr := s.WithTx(tx).DeactivateRefreshToken(ctx, tokenHash)
-	if err != nil {
+	_, deactivateErr := s.WithTx(tx).DeactivateRefreshToken(ctx, oldHash)
+	if deactivateErr != nil {
 		return fmt.Errorf("failed to deactivate refresh token: %w", deactivateErr)
 	}
 
-	_, saveErr := s.WithTx(tx).InsertRefreshToken(ctx, userID, tokenHash, expiresAt)
+	_, saveErr := s.WithTx(tx).InsertRefreshToken(ctx, userID, newHash, expiresAt)
 	if saveErr != nil {
 		return fmt.Errorf("failed to save refresh token: %w", saveErr)
 	}
@@ -210,6 +210,11 @@ func (s *PostgresStore) FindRefreshToken(ctx context.Context, tokenHash []byte) 
 }
 
 func (s *PostgresStore) DeactivateRefreshToken(ctx context.Context, tokenHash []byte) error {
+	_, err := s.DB().DeactivateRefreshToken(ctx, tokenHash)
+	return err
+}
+
+func (s *PostgresStore) RevokeRefreshToken(ctx context.Context, tokenHash []byte) error {
 	_, err := s.DB().DeactivateRefreshToken(ctx, tokenHash)
 	return err
 }

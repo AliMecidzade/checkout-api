@@ -49,6 +49,7 @@ func main() {
 	mux.HandleFunc("POST /signup", h.CreateUser)
 	mux.HandleFunc("POST /login", h.LoginUser)
 	mux.HandleFunc("GET /token", h.IssueJWT)
+	mux.HandleFunc("POST /logout", h.Logout)
 
 	handlers := handlers.WithCORS(mux)
 
