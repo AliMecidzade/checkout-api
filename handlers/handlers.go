@@ -472,6 +472,18 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	_, err = h.store.FindUserByEmail(r.Context(), req.Email)
+	if err == nil {
+		writeJSON(w, http.StatusConflict, ErrorMessageResponse{
+			Message: "email already exists",
+		})
+		return
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
