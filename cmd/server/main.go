@@ -1,8 +1,6 @@
 package main
 
 import (
-	"checkout-api/handlers"
-	"checkout-api/store"
 	"context"
 	"fmt"
 	"log"
@@ -11,6 +9,12 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+
+	"checkout-api/handlers"
+	"checkout-api/internal/httpapi/middleware"
+	"checkout-api/internal/repository/postgres"
+	"checkout-api/internal/service"
+	"checkout-api/store"
 )
 
 func main() {
@@ -33,14 +37,17 @@ func main() {
 	postgresStore := store.NewPostgresStore(pool)
 	h := handlers.NewHandler(postgresStore)
 
+	pg := postgres.NewPostgresStore(pool)
+	authSvc := service.NewAuthService(pg, pg, []byte(os.Getenv("SIGNING_SECRET")))
+
 	// cart
-	mux.HandleFunc("GET /user/cart", handlers.AuthMiddleware(h.GetUserCart))
-	mux.HandleFunc("PATCH /user/cart/items/{item_id}", handlers.AuthMiddleware(h.UpsertCartItem))
-	mux.HandleFunc("DELETE /user/cart/items/{item_id}", handlers.AuthMiddleware(h.RemoveCartItem))
+	mux.HandleFunc("GET /user/cart", middleware.AuthMiddleware(authSvc, h.GetUserCart))
+	mux.HandleFunc("PATCH /user/cart/items/{item_id}", middleware.AuthMiddleware(authSvc, h.UpsertCartItem))
+	mux.HandleFunc("DELETE /user/cart/items/{item_id}", middleware.AuthMiddleware(authSvc, h.RemoveCartItem))
 
 	// orders
-	mux.HandleFunc("POST /orders", handlers.AuthMiddleware(h.CreateOrder))
-
+	mux.HandleFunc("POST /orders", middleware.AuthMiddleware(authSvc, h.CreateOrder))
+	mux.HandleFunc("GET /user/orders", middleware.AuthMiddleware(authSvc, h.GetUserOrders))
 	// items
 	mux.HandleFunc("GET /items", h.GetItems)
 	mux.HandleFunc("GET /items/{item_id}", h.GetItemByID)

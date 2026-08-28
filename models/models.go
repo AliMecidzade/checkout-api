@@ -13,11 +13,11 @@ type Item struct {
 }
 
 type RefreshToken struct {
-	ID        int       `json:"id"`
-	UserID    int       `json:"user_id"`
-	TokenHash []byte    `json:"token_hash"`
-	IsActive  bool      `json:"is_active"`
-	ExpiresAt time.Time `json:"expires_at"`
+	ID        int        `json:"id"`
+	UserID    int        `json:"user_id"`
+	TokenHash []byte     `json:"token_hash"`
+	IsActive  bool       `json:"is_active"`
+	ExpiresAt time.Time  `json:"expires_at"`
 	CreatedAt time.Time  `json:"created_at"`
 	RevokedAt *time.Time `json:"revoked_at,omitempty"`
 }
@@ -31,11 +31,12 @@ type LineItem struct {
 
 // Order represents a completed purchase.
 type Order struct {
-	ID     int        `json:"id"`
-	UserID int        `json:"user_id"`
-	Items  []LineItem `json:"line_items"`
-	Total  int        `json:"total"`
-	Status string     `json:"status"` // pending, paid, failed
+	ID        int        `json:"id"`
+	UserID    int        `json:"user_id"`
+	Items     []LineItem `json:"line_items"`
+	Total     int        `json:"total"`
+	Status    string     `json:"status"` // pending, paid, failed
+	CreatedAt time.Time  `json:"created_at"`
 }
 
 // Cart is a single cart row representing one item in a user's cart.

@@ -36,8 +36,8 @@ func (s *PostgresStore) WithTx(tx pgx.Tx) *Query {
 	}
 }
 
-func (s *PostgresStore) GetItems(ctx context.Context) ([]*models.Item, error) {
-	rows, err := s.DB().GetItems(ctx)
+func (s *PostgresStore) GetItems(ctx context.Context, offset int, limit int) ([]*models.Item, error) {
+	rows, err := s.DB().GetItems(ctx, offset, limit)
 	if err != nil {
 		return nil, fmt.Errorf("%w: failed to select all items", err)
 	}
@@ -125,6 +125,24 @@ func (s *PostgresStore) CreateOrder(ctx context.Context, userID int, items []mod
 func (s *PostgresStore) UpdateOrderStatus(ctx context.Context, orderID int, status string) error {
 	_, err := s.DB().UpdateOrderStatus(ctx, orderID, status)
 	return err
+}
+
+func (s *PostgresStore) GetUserOrders(ctx context.Context, userID int) ([]models.Order, error) {
+	rows, err := s.DB().GetUserOrders(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get orders for user %d: %w", userID, err)
+	}
+	defer rows.Close()
+
+	orders := make([]models.Order, 0)
+	for rows.Next() {
+		var order models.Order
+		if err := rows.Scan(&order.ID, &order.UserID, &order.Total, &order.Status, &order.CreatedAt); err != nil {
+			return nil, err
+		}
+		orders = append(orders, order)
+	}
+	return orders, nil
 }
 
 func (s *PostgresStore) UpsertCartItem(ctx context.Context, userID int, itemID int, quantity int) error {

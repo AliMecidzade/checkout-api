@@ -18,8 +18,8 @@ type Query struct {
 	DBTX DBTX
 }
 
-func (q *Query) GetItems(ctx context.Context) (pgx.Rows, error) {
-	return q.DBTX.Query(ctx, "select id, name, description, price, stock, created_at from items")
+func (q *Query) GetItems(ctx context.Context, offset int, limit int) (pgx.Rows, error) {
+	return q.DBTX.Query(ctx, "select id, name, description, price, stock, created_at from items LIMIT $1 OFFSET $2", limit, offset)
 }
 
 func (q *Query) GetItemByID(ctx context.Context, id int) pgx.Row {
@@ -51,6 +51,15 @@ func (q *Query) DeactivateRefreshToken(ctx context.Context, tokenHash []byte) (p
 
 func (q *Query) GetItemByIDForUpdate(ctx context.Context, id int) pgx.Row {
 	return q.DBTX.QueryRow(ctx, "select id, name, description, price, stock, created_at from items where id = $1 FOR UPDATE", id)
+}
+func (q *Query) GetUserOrders(ctx context.Context, userID int) (pgx.Rows, error) {
+	return q.DBTX.Query(ctx,
+		"select id, user_id, total, status, created_at from orders where user_id = $1 order by created_at desc",
+		userID,
+	)
+}
+func (q *Query) GetOrderLineItems(ctx context.Context, orderID int) (pgx.Rows, error) {
+	return q.DBTX.Query(ctx, "select item_id, quantity, price from line_items where order_id = $1", orderID)
 }
 
 func (q *Query) InsertOrderReturning(ctx context.Context, userID int, total int, status string) pgx.Row {

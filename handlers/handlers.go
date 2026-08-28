@@ -12,7 +12,6 @@ import (
 	"net/mail"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -24,7 +23,7 @@ import (
 
 // ItemStore defines the data operations the handler needs.
 type ItemStore interface {
-	GetItems(ctx context.Context) ([]*models.Item, error)
+	GetItems(ctx context.Context, offset int, limit int) ([]*models.Item, error)
 	GetItem(ctx context.Context, id int) (*models.Item, error)
 	CreateOrder(ctx context.Context, userID int, items []models.LineItem, total int, status string) (*models.Order, error)
 	UpdateOrderStatus(ctx context.Context, orderID int, status string) error
@@ -34,7 +33,7 @@ type ItemStore interface {
 	RemoveCartItem(ctx context.Context, userID int, itemID int) error
 	SaveUser(ctx context.Context, email string, hash []byte) error
 	FindUserByEmail(ctx context.Context, email string) (models.User, error)
-
+	GetUserOrders(ctx context.Context, userID int) ([]models.Order, error)
 	SaveRefreshToken(ctx context.Context, userID int,
 		tokenHash []byte, expiresAt time.Time) error
 
@@ -73,7 +72,7 @@ type IdempotencyRecord struct {
 
 func WithCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
+		w.Header().Set("Access-Control-Allow-Origin", r.Header.Get("Origin"))
 		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, PATCH")
 		w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, Content-Length, Accept-Encoding, Idempotency-Key")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
@@ -87,47 +86,7 @@ func WithCORS(next http.Handler) http.Handler {
 
 }
 
-func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeaderStr := r.Header.Get("Authorization")
-		if authHeaderStr == "" {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-
-		scheme := "bearer "
-		if len(authHeaderStr) <= len(scheme) || !strings.EqualFold(authHeaderStr[:len(scheme)], scheme) {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-
-		userJWT := authHeaderStr[len(scheme):]
-		var claims jwt.RegisteredClaims
-		_, err := jwt.ParseWithClaims(
-			userJWT,
-			&claims,
-			func(t *jwt.Token) (any, error) {
-				return signingSecret(), nil
-			},
-			jwt.WithValidMethods([]string{"HS256"}),
-		)
-		if err != nil {
-			fmt.Printf("failed to parse jwt %q", err.Error())
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-
-		userID, err := strconv.Atoi(claims.Subject)
-		if err != nil {
-			fmt.Printf("failed to parse jwt %q", err.Error())
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-
-		ctx := context.WithValue(r.Context(), "user", userID)
-		next(w, r.WithContext(ctx))
-	})
-}
+//Route: GET /getUserOrders?id=42
 
 // mockProcessPayment simulates a payment provider call.
 func mockProcessPayment(amount int) PaymentResult {
@@ -182,6 +141,22 @@ func (h *Handler) UpsertCartItem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusNoContent, nil)
+}
+
+func (h *Handler) GetUserOrders(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value("user").(int)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	orders, err := h.store.GetUserOrders(r.Context(), userID)
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, orders)
 }
 
 func (h *Handler) RemoveCartItem(w http.ResponseWriter, r *http.Request) {
@@ -331,7 +306,18 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 
 // GetItems handles GET /items — returns all available items.
 func (h *Handler) GetItems(w http.ResponseWriter, r *http.Request) {
-	items, err := h.store.GetItems(r.Context())
+	offsetStr := r.URL.Query().Get("offset")
+	offset, err := strconv.Atoi(offsetStr)
+	if err != nil {
+		http.Error(w, "invalid offset", http.StatusBadRequest)
+	}
+	limitStr := r.URL.Query().Get("limit")
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil {
+		http.Error(w, "invalid limit", http.StatusBadRequest)
+	}
+
+	items, err := h.store.GetItems(r.Context(), offset, limit)
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
