@@ -170,7 +170,6 @@ func (s *AuthService) Logout(ctx context.Context, refreshToken string) error {
 	return s.tokens.RevokeRefreshToken(ctx, hash[:])
 }
 
-
 func NewAuthService(users repository.UserRepo, tokens repository.TokenRepo, signingKey []byte) *AuthService {
 	return &AuthService{users: users, tokens: tokens, signingKey: signingKey, now: time.Now}
 }

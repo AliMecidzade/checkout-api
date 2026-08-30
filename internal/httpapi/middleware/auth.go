@@ -29,3 +29,8 @@ func AuthMiddleware(svc *service.AuthService, next http.HandlerFunc) http.Handle
 		next(w, r.WithContext(ctx))
 	})
 }
+
+func UserID(ctx context.Context) (int, bool) {
+	id, ok := ctx.Value("user").(int)
+	return id, ok
+}

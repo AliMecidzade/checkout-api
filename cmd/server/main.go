@@ -10,12 +10,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 
-	"checkout-api/handlers"
 	api "checkout-api/internal/httpapi/handlers"
 	"checkout-api/internal/httpapi/middleware"
 	"checkout-api/internal/repository/postgres"
 	"checkout-api/internal/service"
-	"checkout-api/store"
 )
 
 func main() {
@@ -34,24 +32,29 @@ func main() {
 	}
 	fmt.Println("successfully connected to db")
 
-	// s := store.NewInMemStore()
-	postgresStore := store.NewPostgresStore(pool)
-	h := handlers.NewHandler(postgresStore)
-
 	pg := postgres.NewPostgresStore(pool)
+
 	authSvc := service.NewAuthService(pg, pg, []byte(os.Getenv("SIGNING_SECRET")))
+	cartSvc := service.NewCartService(pg, pg)
+	orderSvc := service.NewOrderService(pg)
+	catalogSvc := service.NewCatalogService(pg)
+
 	authHandler := api.NewAuthHandler(authSvc)
+	cartHandler := api.NewCartHandler(cartSvc)
+	orderHandler := api.NewOrdersHandler(orderSvc)
+	itemsHandler := api.NewItemsHandler(catalogSvc)
+
 	// cart
-	mux.HandleFunc("GET /user/cart", middleware.AuthMiddleware(authSvc, h.GetUserCart))
-	mux.HandleFunc("PATCH /user/cart/items/{item_id}", middleware.AuthMiddleware(authSvc, h.UpsertCartItem))
-	mux.HandleFunc("DELETE /user/cart/items/{item_id}", middleware.AuthMiddleware(authSvc, h.RemoveCartItem))
+	mux.HandleFunc("GET /user/cart", middleware.AuthMiddleware(authSvc, cartHandler.GetCart))
+	mux.HandleFunc("PATCH /user/cart/items/{item_id}", middleware.AuthMiddleware(authSvc, cartHandler.UpsertItem))
+	mux.HandleFunc("DELETE /user/cart/items/{item_id}", middleware.AuthMiddleware(authSvc, cartHandler.RemoveItem))
 
 	// orders
-	mux.HandleFunc("POST /orders", middleware.AuthMiddleware(authSvc, h.CreateOrder))
-	mux.HandleFunc("GET /user/orders", middleware.AuthMiddleware(authSvc, h.GetUserOrders))
+	mux.HandleFunc("POST /orders", middleware.AuthMiddleware(authSvc, orderHandler.CreateOrder))
+	mux.HandleFunc("GET /user/orders", middleware.AuthMiddleware(authSvc, orderHandler.GetUserOrders))
 	// items
-	mux.HandleFunc("GET /items", h.GetItems)
-	mux.HandleFunc("GET /items/{item_id}", h.GetItemByID)
+	mux.HandleFunc("GET /items", itemsHandler.List)
+	mux.HandleFunc("GET /items/{item_id}", itemsHandler.GetByID)
 
 	// auth
 	mux.HandleFunc("POST /signup", authHandler.CreateUser)
@@ -59,8 +62,6 @@ func main() {
 	mux.HandleFunc("GET /token", authHandler.Refresh)
 	mux.HandleFunc("POST /logout", authHandler.Logout)
 
-	handlers := handlers.WithCORS(mux)
-
 	fmt.Println("Server starting on :8080")
-	log.Fatal(http.ListenAndServe(":8080", handlers))
+	log.Fatal(http.ListenAndServe(":8080", middleware.WithCORS(mux)))
 }

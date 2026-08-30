@@ -9,6 +9,3 @@ func IsEmail(email string) bool {
 	}
 	return parsed.Address == email
 }
-
-
-

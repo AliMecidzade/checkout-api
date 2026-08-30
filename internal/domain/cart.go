@@ -12,10 +12,8 @@ type CartItem struct {
 	CreatedAt   time.Time
 }
 
-
 type Cart struct {
 	UserID   int64
 	ItemID   int64
 	Quantity int64
 }
-

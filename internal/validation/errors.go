@@ -1,9 +1,9 @@
 package validation
 
 type FieldError struct {
-	Field   string
-	Message string
-	Rule    string
+	Field   string `json:"field"`
+	Message string `json:"message"`
+	Rule    string `json:"rule"`
 }
 
 func (e FieldError) Error() string {

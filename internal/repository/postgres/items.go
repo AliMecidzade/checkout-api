@@ -18,7 +18,7 @@ func (s *PostgresStore) ListItems(ctx context.Context, p domain.Page) ([]domain.
 	)
 	limit := int64(p.Limit) + 1
 	if p.Cursor != nil {
-		rows, err = s.DB().GetItemsAfter(ctx, limit, p.Cursor.CreatedAt, p.Cursor.ID)
+		rows, err = s.DB().GetItemsAfterID(ctx, limit, p.Cursor.ID)
 	} else {
 		rows, err = s.DB().GetItemsOffset(ctx, limit, int64(p.Offset))
 	}

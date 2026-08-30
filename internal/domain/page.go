@@ -1,7 +1,5 @@
 package domain
 
-import "time"
-
 type Page struct {
 	Limit  int
 	Offset int
@@ -9,6 +7,5 @@ type Page struct {
 }
 
 type Cursor struct {
-	CreatedAt time.Time
-	ID        int64
+	ID int64
 }

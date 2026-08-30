@@ -6,7 +6,7 @@ DATABASE_URL := $(shell grep '^DATABASE_URL=' .env 2>/dev/null | cut -d= -f2-)
 .PHONY: run migrate-up migrate-down migrate-down-all migrate-fresh migrate-recreate migrate-force psql
 
 run:
-	go run .
+	go run ./cmd/server
 
 migrate-up:
 	@test -n "$(DATABASE_URL)" || (echo "DATABASE_URL not found in .env" && exit 1)

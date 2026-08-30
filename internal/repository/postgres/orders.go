@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"checkout-api/internal/domain"
 	"checkout-api/internal/repository"
@@ -35,7 +36,8 @@ func (s *PostgresStore) CreateOrder(ctx context.Context, userID int64, items []d
 	}
 
 	var orderID int64
-	if err := q.InsertOrderReturning(ctx, userID, total, status).Scan(&orderID); err != nil {
+	var orderCreatedAt time.Time
+	if err := q.InsertOrderReturning(ctx, userID, total, status).Scan(&orderID, &orderCreatedAt); err != nil {
 		return domain.Order{}, fmt.Errorf("insert order: %w", err)
 	}
 
@@ -53,11 +55,12 @@ func (s *PostgresStore) CreateOrder(ctx context.Context, userID int64, items []d
 	}
 
 	return domain.Order{
-		ID:     orderID,
-		UserID: userID,
-		Items:  items,
-		Total:  total,
-		Status: status,
+		ID:        orderID,
+		UserID:    userID,
+		Items:     items,
+		Total:     total,
+		Status:    status,
+		CreatedAt: orderCreatedAt,
 	}, nil
 }
 
@@ -68,39 +71,54 @@ func (s *PostgresStore) UpdateOrderStatus(ctx context.Context, orderID int64, st
 	return nil
 }
 
-func (s *PostgresStore) GetUserOrders(ctx context.Context, userID int64) ([]domain.Order, error) {
-	rows, err := s.DB().GetUserOrders(ctx, userID)
+func (s *PostgresStore) ListOrdersByUser(ctx context.Context, userID int64, p domain.Page) ([]domain.Order, bool, error) {
+	var (
+		rows pgx.Rows
+		err  error
+	)
+	limit := int64(p.Limit) + 1
+	if p.Cursor != nil {
+		rows, err = s.DB().GetUserOrdersAfterID(ctx, userID, limit, p.Cursor.ID)
+	} else {
+		rows, err = s.DB().GetUserOrdersOffset(ctx, userID, limit, int64(p.Offset))
+	}
 	if err != nil {
-		return nil, fmt.Errorf("get orders for user %d: %w", userID, err)
+		return nil, false, fmt.Errorf("get orders for user %d: %w", userID, err)
 	}
 	defer rows.Close()
 
-	orders := make([]domain.Order, 0)
-	orderIDs := make([]int64, 0)
+	orders := make([]domain.Order, 0, p.Limit)
+	orderIDs := make([]int64, 0, p.Limit)
 	for rows.Next() {
 		var o domain.Order
 		if err := rows.Scan(&o.ID, &o.UserID, &o.Total, &o.Status, &o.CreatedAt); err != nil {
-			return nil, fmt.Errorf("scan order: %w", err)
+			return nil, false, fmt.Errorf("scan order: %w", err)
 		}
 		orders = append(orders, o)
 		orderIDs = append(orderIDs, o.ID)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate orders: %w", err)
+		return nil, false, fmt.Errorf("iterate orders: %w", err)
+	}
+
+	hasMore := int64(len(orders)) > int64(p.Limit)
+	if hasMore {
+		orders = orders[:p.Limit]
+		orderIDs = orderIDs[:p.Limit]
 	}
 
 	if len(orderIDs) == 0 {
-		return orders, nil
+		return orders, hasMore, nil
 	}
 
 	itemsByOrder, err := s.lineItemsByOrderIDs(ctx, orderIDs)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	for i := range orders {
 		orders[i].Items = itemsByOrder[orders[i].ID]
 	}
-	return orders, nil
+	return orders, hasMore, nil
 }
 
 func (s *PostgresStore) lineItemsByOrderIDs(ctx context.Context, orderIDs []int64) (map[int64][]domain.LineItem, error) {

@@ -4,6 +4,7 @@ import "time"
 
 const (
 	OrderStatusPending = "pending"
+	OrderStatusPaid    = "paid"
 	OrderStatusCreated = "created"
 	OrderStatusFailed  = "failed"
 )

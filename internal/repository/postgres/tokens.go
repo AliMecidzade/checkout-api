@@ -1,8 +1,5 @@
 package postgres
 
-
-
-
 import (
 	"context"
 	"errors"
@@ -14,7 +11,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 )
-
 
 func (s *PostgresStore) SaveRefreshToken(ctx context.Context, userID int64, tokenHash []byte, expiresAt time.Time) error {
 	if _, err := s.DB().InsertRefreshToken(ctx, userID, tokenHash, expiresAt); err != nil {
@@ -67,4 +63,3 @@ func (s *PostgresStore) RotateRefreshToken(ctx context.Context, oldHash []byte, 
 func (s *PostgresStore) RevokeRefreshToken(ctx context.Context, tokenHash []byte) error {
 	return s.DeactivateRefreshToken(ctx, tokenHash)
 }
-

@@ -20,15 +20,15 @@ type Query struct {
 
 func (q *Query) GetItemsOffset(ctx context.Context, limit int64, offset int64) (pgx.Rows, error) {
 	return q.DBTX.Query(ctx,
-		"select id, name, description, price, stock, created_at from items order by created_at desc, id desc limit $1 offset $2",
+		"select id, name, description, price, stock, created_at from items order by id desc limit $1 offset $2",
 		limit, offset,
 	)
 }
 
-func (q *Query) GetItemsAfter(ctx context.Context, limit int64, cursorCreatedAt time.Time, cursorID int64) (pgx.Rows, error) {
+func (q *Query) GetItemsAfterID(ctx context.Context, limit int64, cursorID int64) (pgx.Rows, error) {
 	return q.DBTX.Query(ctx,
-		"select id, name, description, price, stock, created_at from items where (created_at, id) < ($2, $3) order by created_at desc, id desc limit $1",
-		limit, cursorCreatedAt, cursorID,
+		"select id, name, description, price, stock, created_at from items where id < $2 order by id desc limit $1",
+		limit, cursorID,
 	)
 }
 
@@ -40,13 +40,25 @@ func (q *Query) GetItemByIDForUpdate(ctx context.Context, id int64) pgx.Row {
 	return q.DBTX.QueryRow(ctx, "select id, name, description, price, stock, created_at from items where id = $1 for update", id)
 }
 
-func (q *Query) GetItemsFromUserCart(ctx context.Context, userID int64) (pgx.Rows, error) {
+func (q *Query) GetItemsFromUserCartOffset(ctx context.Context, userID int64, limit int64, offset int64) (pgx.Rows, error) {
 	return q.DBTX.Query(ctx,
 		`select i.id, i.name, i.description, i.price, i.stock, i.created_at, c.quantity
 		from carts c
 		inner join items i on i.id = c.item_id
-		where c.user_id = $1`,
-		userID,
+		where c.user_id = $1
+		order by i.id asc limit $2 offset $3`,
+		userID, limit, offset,
+	)
+}
+
+func (q *Query) GetItemsFromUserCartAfterID(ctx context.Context, userID int64, limit int64, cursorItemID int64) (pgx.Rows, error) {
+	return q.DBTX.Query(ctx,
+		`select i.id, i.name, i.description, i.price, i.stock, i.created_at, c.quantity
+		from carts c
+		inner join items i on i.id = c.item_id
+		where c.user_id = $1 and i.id > $2
+		order by i.id asc limit $3`,
+		userID, cursorItemID, limit,
 	)
 }
 
@@ -65,10 +77,17 @@ func (q *Query) DeleteItemFromUserCart(ctx context.Context, userID int64, itemID
 	return q.DBTX.Exec(ctx, "delete from carts where user_id = $1 and item_id = $2", userID, itemID)
 }
 
-func (q *Query) GetUserOrders(ctx context.Context, userID int64) (pgx.Rows, error) {
+func (q *Query) GetUserOrdersOffset(ctx context.Context, userID int64, limit int64, offset int64) (pgx.Rows, error) {
 	return q.DBTX.Query(ctx,
-		"select id, user_id, total, status, created_at from orders where user_id = $1 order by created_at desc, id desc",
-		userID,
+		"select id, user_id, total, status, created_at from orders where user_id = $1 order by id desc limit $2 offset $3",
+		userID, limit, offset,
+	)
+}
+
+func (q *Query) GetUserOrdersAfterID(ctx context.Context, userID int64, limit int64, cursorID int64) (pgx.Rows, error) {
+	return q.DBTX.Query(ctx,
+		"select id, user_id, total, status, created_at from orders where user_id = $1 and id < $3 order by id desc limit $2",
+		userID, limit, cursorID,
 	)
 }
 
@@ -80,7 +99,7 @@ func (q *Query) GetLineItemsByOrderIDs(ctx context.Context, orderIDs []int64) (p
 }
 
 func (q *Query) InsertOrderReturning(ctx context.Context, userID int64, total int64, status string) pgx.Row {
-	return q.DBTX.QueryRow(ctx, "insert into orders (user_id, total, status) values ($1, $2, $3) returning id", userID, total, status)
+	return q.DBTX.QueryRow(ctx, "insert into orders (user_id, total, status) values ($1, $2, $3) returning id, created_at", userID, total, status)
 }
 
 func (q *Query) UpdateOrderStatus(ctx context.Context, orderID int64, status string) (pgconn.CommandTag, error) {
