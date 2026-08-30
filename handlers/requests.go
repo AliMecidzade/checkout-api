@@ -14,8 +14,3 @@ type LineItemRequest struct {
 	Quantity int `json:"quantity"`
 	Price    int `json:"price"`
 }
-
-type AuthRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-}

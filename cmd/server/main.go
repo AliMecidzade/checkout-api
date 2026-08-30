@@ -11,6 +11,7 @@ import (
 	"github.com/joho/godotenv"
 
 	"checkout-api/handlers"
+	api "checkout-api/internal/httpapi/handlers"
 	"checkout-api/internal/httpapi/middleware"
 	"checkout-api/internal/repository/postgres"
 	"checkout-api/internal/service"
@@ -39,7 +40,7 @@ func main() {
 
 	pg := postgres.NewPostgresStore(pool)
 	authSvc := service.NewAuthService(pg, pg, []byte(os.Getenv("SIGNING_SECRET")))
-
+	authHandler := api.NewAuthHandler(authSvc)
 	// cart
 	mux.HandleFunc("GET /user/cart", middleware.AuthMiddleware(authSvc, h.GetUserCart))
 	mux.HandleFunc("PATCH /user/cart/items/{item_id}", middleware.AuthMiddleware(authSvc, h.UpsertCartItem))
@@ -52,11 +53,11 @@ func main() {
 	mux.HandleFunc("GET /items", h.GetItems)
 	mux.HandleFunc("GET /items/{item_id}", h.GetItemByID)
 
-	// users
-	mux.HandleFunc("POST /signup", h.CreateUser)
-	mux.HandleFunc("POST /login", h.LoginUser)
-	mux.HandleFunc("GET /token", h.IssueJWT)
-	mux.HandleFunc("POST /logout", h.Logout)
+	// auth
+	mux.HandleFunc("POST /signup", authHandler.CreateUser)
+	mux.HandleFunc("POST /login", authHandler.LoginUser)
+	mux.HandleFunc("GET /token", authHandler.Refresh)
+	mux.HandleFunc("POST /logout", authHandler.Logout)
 
 	handlers := handlers.WithCORS(mux)
 

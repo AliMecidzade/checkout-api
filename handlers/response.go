@@ -50,8 +50,3 @@ type CartItemResponse struct {
 	CreatedAt   time.Time `json:"created_at"`
 	Quantity    int       `json:"quantity"`
 }
-
-type AuthResponse struct {
-	JWT          string `json:"jwt"`
-	RefreshToken string `json:"refresh_token"`
-}

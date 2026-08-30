@@ -2,21 +2,11 @@ package handlers
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
-	"net/mail"
-	"os"
 	"strconv"
 	"time"
-
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/jackc/pgx/v5"
-	"golang.org/x/crypto/bcrypt"
 
 	"checkout-api/models"
 )
@@ -31,23 +21,7 @@ type ItemStore interface {
 	GetUserCart(ctx context.Context, userID int) ([]models.CartItem, error)
 	DeleteUserCart(ctx context.Context, userID int) error
 	RemoveCartItem(ctx context.Context, userID int, itemID int) error
-	SaveUser(ctx context.Context, email string, hash []byte) error
-	FindUserByEmail(ctx context.Context, email string) (models.User, error)
 	GetUserOrders(ctx context.Context, userID int) ([]models.Order, error)
-	SaveRefreshToken(ctx context.Context, userID int,
-		tokenHash []byte, expiresAt time.Time) error
-
-	FindRefreshToken(ctx context.Context, tokenHash []byte) (models.RefreshToken, error)
-	DeactivateRefreshToken(ctx context.Context, tokenHash []byte) error
-	RotateRefreshToken(ctx context.Context, oldHash []byte, newHash []byte, userID int, expiresAt time.Time) error
-	RevokeRefreshToken(ctx context.Context, tokenHash []byte) error
-}
-
-// signingSecret returns the JWT signing secret. os.Getenv is read lazily
-// because godotenv.Load() runs inside main() — in package init the .env file
-// is not loaded yet.
-func signingSecret() []byte {
-	return []byte(os.Getenv("SIGNING_SECRET"))
 }
 
 // Handler holds dependencies for HTTP handlers.
@@ -85,8 +59,6 @@ func WithCORS(next http.Handler) http.Handler {
 	})
 
 }
-
-//Route: GET /getUserOrders?id=42
 
 // mockProcessPayment simulates a payment provider call.
 func mockProcessPayment(amount int) PaymentResult {
@@ -364,232 +336,4 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
-}
-
-func (h *Handler) LoginUser(w http.ResponseWriter, r *http.Request) {
-	var req AuthRequest
-	err := json.NewDecoder(r.Body).Decode(&req)
-	if err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
-		return
-	}
-
-	user, err := h.store.FindUserByEmail(r.Context(), req.Email)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			writeJSON(w, http.StatusUnprocessableEntity, ErrorMessageResponse{
-				Message: "user does not exist",
-			})
-			return
-		}
-		fmt.Printf("cannot query %q", err.Error())
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	err = bcrypt.CompareHashAndPassword(user.Hash, []byte(req.Password))
-	if err != nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-	// issue jwt
-	signedString, err := generateJWT(user.ID)
-	if err != nil {
-		fmt.Printf("cannot generate signed string %q", err.Error())
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	// store session(refresh token)
-	refreshToken, hash, err := generateRefreshToken()
-	if err != nil {
-		fmt.Printf("cannot generate refresh token %q", err.Error())
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	expiresAt := time.Now().Add(7 * 24 * time.Hour)
-
-	err = h.store.SaveRefreshToken(r.Context(), user.ID, hash, expiresAt)
-	if err != nil {
-		fmt.Printf("cannot save refresh token %q", err.Error())
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	http.SetCookie(w, &http.Cookie{
-		Name:     "refresh_token",
-		Value:    refreshToken,
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   int((7 * 24 * time.Hour).Seconds()),
-	})
-
-	writeJSON(w, http.StatusOK, AuthResponse{
-		JWT:          signedString,
-		RefreshToken: refreshToken,
-	})
-}
-
-func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
-	var req AuthRequest
-	err := json.NewDecoder(r.Body).Decode(&req)
-	if err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
-		return
-	}
-
-	// validate email
-	_, err = mail.ParseAddress(req.Email)
-	if err != nil {
-		writeJSON(w, http.StatusUnprocessableEntity, ErrorMessageResponse{
-			Message: "invalid email",
-		})
-		return
-	}
-
-	pwlen := len(req.Password)
-	// validate password
-	if pwlen < 12 || pwlen > 25 {
-		writeJSON(w, http.StatusUnprocessableEntity, ErrorMessageResponse{
-			Message: "password is too short or too long",
-		})
-		return
-	}
-
-	_, err = h.store.FindUserByEmail(r.Context(), req.Email)
-	if err == nil {
-		writeJSON(w, http.StatusConflict, ErrorMessageResponse{
-			Message: "email already exists",
-		})
-		return
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-	if err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	err = h.store.SaveUser(r.Context(), req.Email, hash)
-	if err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	writeJSON(w, http.StatusCreated, nil)
-}
-
-func generateRefreshToken() (string, []byte, error) {
-	bytes := make([]byte, 32)
-	_, err := rand.Read(bytes)
-	if err != nil {
-		return "", nil, err
-
-	}
-	rawToken := hex.EncodeToString(bytes)
-	hash := sha256.Sum256([]byte(rawToken))
-
-	return rawToken, hash[:], nil
-
-}
-
-func generateJWT(userID int) (string, error) {
-	expiringTime := time.Now().Add(15 * time.Minute)
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
-		ExpiresAt: jwt.NewNumericDate(expiringTime),
-		Subject:   strconv.Itoa(userID),
-		IssuedAt:  jwt.NewNumericDate(time.Now()),
-	})
-	return token.SignedString(signingSecret())
-}
-
-func (h *Handler) IssueJWT(w http.ResponseWriter, r *http.Request) {
-	givenRefreshToken := r.URL.Query().Get("refresh_token")
-	if cookie, err := r.Cookie("refresh_token"); err == nil {
-		givenRefreshToken = cookie.Value
-	}
-	if givenRefreshToken == "" {
-		http.Error(w, "Missing refresh token", http.StatusBadRequest)
-		return
-	}
-
-	sum := sha256.Sum256([]byte(givenRefreshToken))
-	hash := sum[:]
-
-	refreshToken, err := h.store.FindRefreshToken(r.Context(), hash)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-		fmt.Printf("cannot find refresh token %q", err.Error())
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	if !refreshToken.IsActive || refreshToken.ExpiresAt.Before(time.Now()) {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	signedString, err := generateJWT(refreshToken.UserID)
-	if err != nil {
-		fmt.Printf("cannot generate signed string %q", err.Error())
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	newRefreshToken, newHash, err := generateRefreshToken()
-	if err != nil {
-		fmt.Printf("cannot generate refresh token %q", err.Error())
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-	expiringTime := time.Now().Add(7 * 24 * time.Hour)
-	err = h.store.RotateRefreshToken(r.Context(), hash, newHash, refreshToken.UserID, expiringTime)
-
-	if err != nil {
-		fmt.Printf("cannot rotate refresh token %q", err.Error())
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	http.SetCookie(w, &http.Cookie{
-		Name:     "refresh_token",
-		Value:    newRefreshToken,
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   int((7 * 24 * time.Hour).Seconds()),
-	})
-
-	writeJSON(w, http.StatusOK, AuthResponse{
-		JWT:          signedString,
-		RefreshToken: newRefreshToken,
-	})
-}
-
-func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("refresh_token")
-	if err == nil {
-		sum := sha256.Sum256([]byte(cookie.Value))
-		_ = h.store.RevokeRefreshToken(r.Context(), sum[:])
-	}
-
-	http.SetCookie(w, &http.Cookie{
-		Name:     "refresh_token",
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   -1,
-	})
-
-	w.WriteHeader(http.StatusNoContent)
 }
